@@ -5,7 +5,7 @@ use bdui::client::{BeadsClient as _, CliClient};
 use bdui::drawer::{DetailClient, Drawer};
 use bdui::store::Store;
 use gpui_kit::AppContext as _;
-use gpui_kit::WindowOptions;
+use gpui_kit::{WindowDecorations, WindowOptions};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -40,7 +40,13 @@ fn main() {
         .with_assets(gpui_kit::assets::Assets)
         .run(|cx| {
             gpui_kit::init(cx);
-            gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
+            gpui_kit::open_window(
+                WindowOptions {
+                    window_decorations: Some(WindowDecorations::Server),
+                    ..WindowOptions::default()
+                },
+                cx,
+                |window, cx| {
                 let cli = Arc::new(CliClient::new());
                 let client = Rc::new(CliShim { client: cli.clone() });
                 let store = cx.new(|_| Store::new());
