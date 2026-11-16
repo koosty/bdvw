@@ -74,10 +74,6 @@ fn version_wins_and_short_circuits() {
 
 #[test]
 fn version_matches_the_manifest() {
-    assert_eq!(bdui_version(), env!("CARGO_PKG_VERSION"));
-    assert!(bdui_version().starts_with("0.1.0-alpha"));
-}
-
-fn bdui_version() -> &'static str {
-    bdvw::startup::VERSION
+    assert_eq!(bdvw::startup::VERSION, env!("CARGO_PKG_VERSION"));
+    assert!(bdvw::startup::VERSION.starts_with("0.1.0-alpha"));
 }
