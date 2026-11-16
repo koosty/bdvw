@@ -1,6 +1,6 @@
 # Beads Viewer
 
-A desktop UI for supervising bd (beads) issue-tracker work driven by agents. Built in Rust with gpui-kit; ported from the HTML prototype at `docs/ui/prototype.html`.
+A desktop UI for supervising bd (beads) issue-tracker work driven by agents. Built in Rust with gpui-kit; ported from a local HTML design prototype (not part of this repository).
 
 ## Language
 

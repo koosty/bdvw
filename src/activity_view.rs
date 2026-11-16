@@ -154,7 +154,9 @@ impl ActivityView {
                 div()
                     .text_xs()
                     .font_weight(gpui_kit::FontWeight::BOLD)
-                    .text_color(theme.accent)
+                    // accent is a near-background hover tone in the light
+                    // theme; the type label needs real contrast.
+                    .text_color(crate::app::event_color(&entry.event.kind))
                     .child(SharedString::from(event_label(&entry.event.kind).to_string())),
             )
             .child(

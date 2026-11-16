@@ -33,6 +33,21 @@ pub fn state_color(state: &State) -> gpui_kit::Hsla {
     }
 }
 
+/// Colors for activity event kinds, distinct from the state palette so a
+/// timeline reads at a glance in both themes.
+pub fn event_color(kind: &str) -> gpui_kit::Hsla {
+    match kind {
+        "created" => rgb(0x6aa0ff).into(),
+        "claimed" => rgb(0x3ccf7e).into(),
+        "closed" => rgb(0x6b7486).into(),
+        "reopened" => rgb(0xffb454).into(),
+        "dependency_added" => rgb(0xb794f4).into(),
+        "dependency_removed" => rgb(0xff6b5e).into(),
+        "label_added" | "label_removed" => rgb(0x8ab4f8).into(),
+        _ => rgb(0x9aa4b2).into(),
+    }
+}
+
 /// Issue-type label color: bugs, epics, features get state hues; others stay muted.
 pub fn type_color(issue_type: &str, muted: gpui_kit::Hsla) -> gpui_kit::Hsla {
     match issue_type {
@@ -563,7 +578,15 @@ impl Render for AppShell {
                             .flex_col()
                             .flex_1()
                             .child(self.render_topbar(cx))
-                            .child(self.render_main_pane(&ready, cx)),
+                            .child(
+                                div()
+                                    .id("main-pane-slot")
+                                    .flex()
+                                    .flex_col()
+                                    .flex_1()
+                                    .min_h_0()
+                                    .child(self.render_main_pane(&ready, cx)),
+                            ),
                     )
                     .child(self.drawer.clone()),
             )

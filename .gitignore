@@ -8,3 +8,8 @@
 .beads/proxieddb/
 *.gate.lock*
 .beads.gate.lock*
+# Local beads database and hooks: machine state, not source.
+/.beads/
+
+# Local HTML design prototype (superseded by the gpui implementation)
+/docs/ui/

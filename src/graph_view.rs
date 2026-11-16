@@ -242,7 +242,12 @@ impl Render for GraphView {
                 }
             },
             |_, _, _, _| {},
-        );
+        )
+        // Canvas has no intrinsic size (no children, default style), so it
+        // must be positioned explicitly or its bounds are 0 and prepaint
+        // never sees a real rect.
+        .absolute()
+        .size_full();
 
         let edges = graph.edges.clone();
         let edge_fg = theme.foreground.opacity(0.55);
@@ -304,7 +309,9 @@ impl Render for GraphView {
                     }
                 }
             },
-        );
+        )
+        .absolute()
+        .size_full();
 
         let theme2 = theme.clone();
         // Non-blocks edges carry their kind as a label at the elbow. Labels
@@ -469,7 +476,11 @@ impl Render for GraphView {
 
         div()
             .id("graph-viewport")
+            .flex()
+            .flex_col()
             .flex_1()
+            .h_full()
+            .min_h_0()
             .relative()
             .overflow_hidden()
             .on_scroll(cx.listener(|this, event: &gpui_kit::ScrollEvent, _window, cx| {
@@ -525,8 +536,23 @@ impl Render for GraphView {
                     .id("graph-canvas-wrap")
                     .relative()
                     .size_full()
-                    .child(fit_canvas)
-                    .child(edge_canvas)
+                    // Canvases carry no intrinsic size; without an explicit
+                    // absolute full-size box they lay out at zero and never
+                    // paint bounds, so fit and edge drawing silently skip.
+                    .child(
+                        div()
+                            .id("graph-layer-fit")
+                            .absolute()
+                            .size_full()
+                            .child(fit_canvas),
+                    )
+                    .child(
+                        div()
+                            .id("graph-layer-edges")
+                            .absolute()
+                            .size_full()
+                            .child(edge_canvas),
+                    )
                     .children(node_rows)
                     .children(kind_labels),
             )

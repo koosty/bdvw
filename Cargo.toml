@@ -2,6 +2,16 @@
 name = "bdui"
 version = "0.1.0"
 edition = "2021"
+description = "Desktop viewer for bd (beads) issue trackers"
+repository = "https://github.com/koosty/bdvw"
+license = "MIT"
+readme = "README.md"
+keywords = ["beads", "issue-tracker", "gpui", "gui"]
+categories = ["gui"]
+
+[[bin]]
+name = "bdvw"
+path = "src/main.rs"
 
 [dependencies]
 gpui-kit = "0.9.1"
