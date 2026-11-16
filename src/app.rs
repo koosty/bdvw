@@ -40,6 +40,8 @@ pub fn priority_color(priority: u8) -> gpui_kit::Hsla {
 
 pub struct AppShell {
     store: Entity<Store>,
+    /// Graph view; reloaded when the view activates.
+    graph_view: Entity<crate::graph_view::GraphView>,
     drawer: Entity<crate::drawer::Drawer>,
     /// Command palette overlay (bdui-rs-ue2).
     palette: Entity<crate::palette_ui::Palette>,
@@ -49,6 +51,7 @@ pub struct AppShell {
     g_prefix: bool,
     /// Which view the main pane shows; only Ready is rendered today.
     active_view: crate::palette::ViewKind,
+    client: std::rc::Rc<dyn BeadsClientShim>,
     focus_handle: gpui_kit::FocusHandle,
 }
 
@@ -56,6 +59,8 @@ pub struct AppShell {
 /// the shell needs the client once, at startup.
 pub trait BeadsClientShim {
     fn refresh(&self, store: &mut Store, cx: &mut Context<Store>);
+    /// `bd graph --all --json`, parsed. The graph view fetches on activation.
+    fn graph(&self) -> Result<crate::graph::GraphData, String>;
 }
 
 impl AppShell {
@@ -67,6 +72,7 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) -> Self {
         store.update(cx, |store, cx| client.refresh(store, cx));
+        let graph_view = cx.new(|_| crate::graph_view::GraphView::new());
         let handle = cx.focus_handle();
         window.focus(&handle, cx);
         let palette = cx.new(|cx| crate::palette_ui::Palette::new(window, cx));
@@ -86,11 +92,13 @@ impl AppShell {
 
         Self {
             store,
+            graph_view,
             drawer,
             palette,
             selected_row: None,
             g_prefix: false,
             active_view: crate::palette::ViewKind::Ready,
+            client,
             focus_handle: handle,
         }
     }
@@ -138,7 +146,8 @@ impl AppShell {
                 _ => None,
             };
             if let Some(view) = view {
-                self.go_to_view(view, cx);
+                let client = self.client.clone();
+                self.go_to_view(view, client.as_ref(), cx);
             }
             cx.notify();
             return;
@@ -196,19 +205,24 @@ impl AppShell {
         }
     }
 
-    /// Switch the main pane to a view. Only Ready renders today; the rest
-    /// are named markers until their slices land.
-    fn go_to_view(&mut self, view: crate::palette::ViewKind, cx: &mut Context<Self>) {
-        match view {
-            crate::palette::ViewKind::Ready
-            | crate::palette::ViewKind::Tree
-            | crate::palette::ViewKind::Graph
-            | crate::palette::ViewKind::Board
-            | crate::palette::ViewKind::Activity
-            | crate::palette::ViewKind::Memory => {
-                self.active_view = view;
-            }
+    /// Switch the main pane to a view. Ready and Graph render; the rest
+    /// are named markers until their slices land. Entering Graph fetches
+    /// fresh `bd graph --all --json`.
+    fn go_to_view(
+        &mut self,
+        view: crate::palette::ViewKind,
+        client: &dyn BeadsClientShim,
+        cx: &mut Context<Self>,
+    ) {
+        if view == crate::palette::ViewKind::Graph {
+            let data = client.graph();
+            let gv = self.graph_view.clone();
+            gv.update(cx, |gv, cx| match data {
+                Ok(data) => gv.reload(&data, cx),
+                Err(e) => gv.reload_failed(e, cx),
+            });
         }
+        self.active_view = view;
         cx.notify();
     }
 
@@ -235,7 +249,7 @@ impl Render for AppShell {
                     .flex_1()
                     .min_w_full()
                     .child(self.render_topbar(cx))
-                    .child(self.render_ready_list(&ready, cx)),
+                    .child(self.render_main_pane(&ready, cx)),
             )
             .child(self.palette.clone())
     }
@@ -273,6 +287,31 @@ impl AppShell {
                         .child("0 saved filters"),
                 ),
             )
+    }
+
+    /// The active view pane: Ready list or Graph. Others render a marker
+    /// until their slices land.
+    fn render_main_pane(&self, ready: &[Bead], cx: &mut Context<Self>) -> gpui_kit::AnyElement {
+        match self.active_view {
+            crate::palette::ViewKind::Ready => self
+                .render_ready_list(ready, cx)
+                .into_any_element(),
+            crate::palette::ViewKind::Graph => self.graph_view.clone().into_any_element(),
+            view => {
+                let theme = cx.theme().clone();
+                div()
+                    .id(SharedString::from(format!("view-marker-{view:?}")))
+                    .flex()
+                    .flex_1()
+                    .items_center()
+                    .justify_center()
+                    .text_color(theme.muted_foreground)
+                    .child(SharedString::from(format!(
+                        "{view:?} view lands in a later slice"
+                    )))
+                    .into_any_element()
+            }
+        }
     }
 
     fn render_topbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -460,9 +499,8 @@ fn shell_palette_pick(
             drawer.update(cx, |drawer, cx| drawer.open(&id, cx));
         }
         crate::palette_ui::PaletteAction::GoToView(view) => {
-            // Re-borrow shell through the field; run when window available.
-            shell.active_view = view;
-            cx.notify();
+            let client = shell.client.clone();
+            shell.go_to_view(view, client.as_ref(), cx);
         }
         crate::palette_ui::PaletteAction::ToggleTheme => {
             let mode = if gpui_kit::component::theme::Theme::global(cx).mode.is_dark() {

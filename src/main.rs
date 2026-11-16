@@ -1,7 +1,7 @@
 //! Entry point: open the Beads Viewer window.
 
 use bdui::app::AppShell;
-use bdui::client::CliClient;
+use bdui::client::{BeadsClient as _, CliClient};
 use bdui::drawer::{DetailClient, Drawer};
 use bdui::store::Store;
 use gpui_kit::AppContext as _;
@@ -14,8 +14,11 @@ struct CliShim {
 
 impl bdui::app::BeadsClientShim for CliShim {
     fn refresh(&self, store: &mut Store, cx: &mut gpui_kit::Context<Store>) {
-        
         store.refresh(&self.client, cx);
+    }
+
+    fn graph(&self) -> Result<bdui::graph::GraphData, String> {
+        self.client.graph().map_err(|e| e.to_string())
     }
 }
 

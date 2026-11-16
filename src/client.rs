@@ -1,6 +1,7 @@
 //! BeadsClient: transport trait for all bd access (CONTEXT.md).
 //! v1 implementation is the CLI transport: `bd <cmd> --json` subprocess.
 
+use crate::graph::GraphData;
 use crate::model::{Bead, BeadDetail};
 
 /// Transport boundary between the Store and bd. One method per CLI-shaped
@@ -13,6 +14,9 @@ pub trait BeadsClient {
     /// `bd show <id> --json --long --include-comments --include-dependents`
     /// — full record for the detail drawer.
     fn detail(&self, id: &str) -> Result<BeadDetail, ClientError>;
+    /// `bd graph --all --json` — connected components with full records
+    /// and dependency edges for the DAG view.
+    fn graph(&self) -> Result<GraphData, ClientError>;
 }
 
 #[derive(Debug)]
@@ -92,5 +96,10 @@ impl BeadsClient for CliClient {
             "show", id, "--long", "--include-comments", "--include-dependents",
         ])?;
         crate::model::parse_detail(&out).map_err(ClientError::Parse)
+    }
+
+    fn graph(&self) -> Result<GraphData, ClientError> {
+        let out = self.run_json(&["graph", "--all"])?;
+        crate::graph::parse_components(&out).map_err(ClientError::Parse)
     }
 }

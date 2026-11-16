@@ -94,6 +94,11 @@ impl Bead {
             .cmp(&b.priority)
             .then_with(|| a.id.cmp(&b.id))
     }
+
+    /// Reusable comparator instance for sort_by.
+    pub fn ready_rank_cmp(&self, other: &Bead) -> std::cmp::Ordering {
+        Bead::ready_rank(self, other)
+    }
 }
 
 /// Parse a `bd list --json` array and derive each bead's state.
