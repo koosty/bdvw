@@ -11,6 +11,7 @@ use gpui_kit::component::sidebar::{
 use gpui_kit::assets::IconName;
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::component::WindowExt as _;
+use gpui_kit::component::clipboard::Clipboard;
 use gpui_kit::component::TitleBar;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
@@ -27,6 +28,16 @@ pub fn state_color(state: State) -> gpui_kit::Hsla {
         State::Blocked => rgb(0xff6b5e).into(),  // --blocked
         State::Deferred => rgb(0xb794f4).into(), // --deferred
         State::Closed => rgb(0x6b7486).into(),   // --closed
+    }
+}
+
+/// Issue-type label color: bugs, epics, features get state hues; others stay muted.
+pub fn type_color(issue_type: &str, muted: gpui_kit::Hsla) -> gpui_kit::Hsla {
+    match issue_type {
+        "bug" => state_color(State::Blocked),
+        "epic" => state_color(State::Deferred),
+        "feature" => state_color(State::InProgress),
+        _ => muted,
     }
 }
 
@@ -64,6 +75,8 @@ pub struct AppShell {
     palette: Entity<crate::palette_ui::Palette>,
     /// Index into the ready list for j/k navigation. None = no selection.
     selected_row: Option<usize>,
+    /// Active tab of the Ready view.
+    ready_tab: crate::ready::ReadyTab,
     /// Pending `g` prefix: the next key jump targets a view.
     g_prefix: bool,
     /// Which view the main pane shows; only Ready is rendered today.
@@ -248,6 +261,7 @@ impl AppShell {
             drawer,
             palette,
             selected_row: None,
+            ready_tab: crate::ready::ReadyTab::default(),
             g_prefix: false,
             active_view: crate::palette::ViewKind::Ready,
             client,
@@ -379,13 +393,7 @@ impl AppShell {
             return;
         }
 
-        let ready = self
-            .store
-            .read(cx)
-            .filtered()
-            .into_iter()
-            .filter(|b| b.state == State::Ready)
-            .collect::<Vec<_>>();
+        let ready = self.ready_rows(cx);
         match key {
             "j" => {
                 if ready.is_empty() {
@@ -507,13 +515,7 @@ impl Render for AppShell {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         // The Ready list respects the shared filter surface (bdui-rs-8db).
-        let ready = self
-            .store
-            .read(cx)
-            .filtered()
-            .into_iter()
-            .filter(|b| b.state == State::Ready)
-            .collect::<Vec<_>>();
+        let ready = self.ready_rows(cx);
 
         div()
             .id("shell-root")
@@ -876,36 +878,148 @@ impl AppShell {
             .into_any_element()
     }
 
+    /// Rows for the Ready view's active tab, after the shared filters.
+    fn ready_rows(&self, cx: &Context<Self>) -> Vec<Bead> {
+        let visible = self.store.read(cx).filtered();
+        crate::ready::tab_rows(&visible, self.ready_tab)
+    }
+
+    fn select_ready_tab(&mut self, tab: crate::ready::ReadyTab, cx: &mut Context<Self>) {
+        self.ready_tab = tab;
+        self.selected_row = None;
+        cx.notify();
+    }
+
+    /// Ready view: state tabs, suggested-next card, then the active tab's rows.
     fn render_ready_list(&self, ready: &[Bead], cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
+        let theme = cx.theme().clone();
+        let (counts, synced) = {
+            let store = self.store.read(cx);
+            let visible = store.filtered();
+            let counts = crate::ready::ReadyTab::ALL
+                .map(|tab| (tab, crate::ready::tab_count(&visible, tab)));
+            (counts, store.is_synced())
+        };
 
-        if ready.is_empty() {
-            return div().p_6().text_color(theme.muted_foreground).child(
-                if self.store.read(cx).is_synced() {
-                    "No ready work. All issues have blocking dependencies."
-                } else {
-                    "Loading…"
-                },
-            )
-            .into_any_element();
-        }
+        let tabs = counts.map(|(tab, count)| {
+            let on = tab == self.ready_tab;
+            div()
+                .id(SharedString::from(format!("ready-tab-{}", tab.label())))
+                .flex()
+                .items_center()
+                .gap_2()
+                .px_3()
+                .py_1()
+                .rounded_full()
+                .border_1()
+                .border_color(if on { theme.accent } else { theme.border })
+                .when(on, |el| el.bg(theme.accent.opacity(0.12)))
+                .text_sm()
+                .text_color(if on { theme.foreground } else { theme.muted_foreground })
+                .hover(|s| s.bg(theme.accent.opacity(0.06)))
+                .on_click(cx.listener(move |this, _, _, cx| this.select_ready_tab(tab, cx)))
+                .child(div().size(px(7.)).rounded_full().bg(state_color(tab.state())))
+                .child(tab.label())
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.muted_foreground)
+                        .child(count.to_string()),
+                )
+        });
 
-        // Simple scroll container for v1; VirtualList swap-in comes with the
-        // live-sync slice when refresh timing matters.
-        let selected = self.selected_row;
-        let rows = ready
-            .iter()
-            .enumerate()
-            .map(|(i, bead)| self.render_row(bead, Some(i) == selected, i, cx))
-            .collect::<Vec<_>>();
+        // Suggested next only makes sense on the Ready tab, where `ready` is
+        // in ready-rank order.
+        let suggested = if self.ready_tab == crate::ready::ReadyTab::Ready {
+            crate::ready::suggested_next(ready).map(|bead| {
+                let accent = state_color(State::Ready);
+                let claim = format!("bd update {} --claim", bead.id);
+                div()
+                    .id("suggested-next")
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .px_3()
+                    .py_2()
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(accent.opacity(0.4))
+                    .bg(accent.opacity(0.08))
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_weight(gpui_kit::FontWeight::BOLD)
+                            .text_color(accent)
+                            .child("SUGGESTED NEXT"),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_family(theme.mono_font_family.clone())
+                            .text_color(theme.muted_foreground)
+                            .child(bead.id.clone()),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.))
+                            .overflow_x_hidden()
+                            .text_ellipsis()
+                            .child(bead.title.clone()),
+                    )
+                    .child(
+                        Clipboard::new(SharedString::from(format!("claim-{}", bead.id)))
+                            .value(SharedString::from(claim)),
+                    )
+            })
+        } else {
+            None
+        };
+
+        let list = if ready.is_empty() {
+            let message = if !synced {
+                "Loading…"
+            } else if self.ready_tab == crate::ready::ReadyTab::Ready {
+                "No ready work. All issues have blocking dependencies."
+            } else {
+                "Nothing in this tab."
+            };
+            div()
+                .p_6()
+                .text_color(theme.muted_foreground)
+                .child(message)
+                .into_any_element()
+        } else {
+            // Simple scroll container for v1; VirtualList swap-in comes with the
+            // live-sync slice when refresh timing matters.
+            let selected = self.selected_row;
+            let rows = ready
+                .iter()
+                .enumerate()
+                .map(|(i, bead)| self.render_row(bead, Some(i) == selected, i, cx))
+                .collect::<Vec<_>>();
+            div()
+                .id("ready-list")
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .border_1()
+                .border_color(theme.border)
+                .rounded_lg()
+                .children(rows)
+                .into_any_element()
+        };
 
         div()
-            .id("ready-list")
+            .flex()
+            .flex_col()
             .flex_1()
-            .overflow_y_scroll()
+            .min_h_0()
             .p_3()
-            .children(rows)
-            .into_any_element()
+            .gap_3()
+            .child(div().flex().flex_wrap().gap_2().children(tabs))
+            .children(suggested)
+            .child(list)
     }
 
 
@@ -950,8 +1064,9 @@ impl AppShell {
         idx: usize,
         cx: &mut Context<Self>,
     ) -> gpui_kit::AnyElement {
-        let theme = cx.theme();
+        let theme = cx.theme().clone();
         let color = state_color(bead.state);
+        let priority = priority_color(bead.priority);
 
         let id = bead.id.clone();
         let row_index = idx;
@@ -961,8 +1076,8 @@ impl AppShell {
             .items_center()
             .gap_2()
             .px_3()
-            .py_2()
-            .rounded_md()
+            .py(px(6.))
+            .when(idx > 0, |row| row.border_t_1().border_color(theme.border))
             .when(selected, |row| {
                 row.bg(theme.accent.opacity(0.12))
                     .border_l_2()
@@ -982,12 +1097,17 @@ impl AppShell {
                 div()
                     .text_xs()
                     .font_weight(gpui_kit::FontWeight::BOLD)
-                    .text_color(priority_color(bead.priority))
+                    .text_color(priority)
+                    .border_1()
+                    .border_color(priority)
+                    .rounded_sm()
+                    .px_1()
                     .child(format!("P{}", bead.priority)),
             )
             .child(
                 div()
                     .text_xs()
+                    .font_family(theme.mono_font_family.clone())
                     .text_color(theme.muted_foreground)
                     .child(bead.id.clone()),
             )
@@ -1024,6 +1144,14 @@ impl AppShell {
                         .px_2()
                         .rounded_full()
                         .child(format!("unblocks {}", bead.dependent_count)),
+                )
+            })
+            .when(!bead.issue_type.is_empty(), |row| {
+                row.child(
+                    div()
+                        .text_xs()
+                        .text_color(type_color(&bead.issue_type, theme.muted_foreground))
+                        .child(bead.issue_type.to_uppercase()),
                 )
             })
             .when(bead.assignee.as_deref().is_some_and(|a| !a.is_empty()), |row| {
