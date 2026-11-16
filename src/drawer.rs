@@ -3,16 +3,15 @@
 //! full record loads off the UI thread through the client seam on open.
 
 use crate::app::{priority_color, state_color};
-use crate::model::{BeadDetail, Comment, DepLink, State};
+use crate::model::{Bead, BeadDetail, Comment, DepLink, State};
+use crate::stamp;
 use gpui_kit::AppContext as _;
-use gpui_kit::component::clipboard::Clipboard;
 use gpui_kit::component::ActiveTheme as _;
-use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::component::theme::Theme;
 use gpui_kit::{
-    Context, InteractiveElement as _, IntoElement, ParentElement as _, Render,
+    ClipboardItem, Context, InteractiveElement as _, IntoElement, ParentElement as _, Render,
     SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px,
 };
-use gpui_kit::component::theme::Theme;
 use std::sync::Arc;
 
 /// Transport for drawer loads. `Send + Sync` so loads run off the UI thread.
@@ -141,7 +140,7 @@ impl Drawer {
 
 
 impl Render for Drawer {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Drawer>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Drawer>) -> impl IntoElement {
         let theme = cx.theme().clone();
 
         match (self.slot.selected(), self.slot.detail()) {
@@ -150,7 +149,7 @@ impl Render for Drawer {
                     .slot
                     .error()
                     .map(|e| SharedString::from(format!("Refresh failed: {e}")));
-                let detail = self.render_detail(&theme, window, cx);
+                let detail = self.render_detail(&theme, cx);
                 match banner {
                     None => detail,
                     Some(text) => div()
@@ -189,32 +188,45 @@ impl Render for Drawer {
 }
 
 impl Drawer {
-    fn render_detail(
-        &self,
-        theme: &Theme,
-        window: &mut Window,
-        cx: &mut Context<Drawer>,
-    ) -> gpui_kit::AnyElement {
+    fn render_detail(&self, theme: &Theme, cx: &mut Context<Drawer>) -> gpui_kit::AnyElement {
         let detail = self.slot.detail().expect("checked in render");
-        // Chips open the linked bead in this drawer.
-        let chip_drawer = cx.entity();
-        let open_in_drawer = move |id: &str, window: &mut Window, cx: &mut gpui_kit::App| {
-            let id = id.to_string();
-            let chip_drawer = chip_drawer.clone();
+        let drawer = cx.entity();
+        // Links open the linked bead in this drawer.
+        let open = {
+            let drawer = drawer.clone();
+            move |id: &str, window: &mut Window, cx: &mut gpui_kit::App| {
+                let id = id.to_string();
+                let drawer = drawer.clone();
+                window.defer(cx, move |_, cx| {
+                    drawer.update(cx, |drawer, cx| drawer.open(&id, cx));
+                });
+            }
+        };
+        let close = move |window: &mut Window, cx: &mut gpui_kit::App| {
+            let drawer = drawer.clone();
             window.defer(cx, move |_, cx| {
-                chip_drawer.update(cx, |drawer, cx| drawer.open(&id, cx));
+                drawer.update(cx, |drawer, cx| drawer.close(cx));
             });
         };
-        let _ = window;
-        render_detail(detail, theme, open_in_drawer)
+        render_detail(detail, theme, open, close)
     }
 }
 
-fn render_detail<O>(detail: &BeadDetail, theme: &Theme, open: O) -> gpui_kit::AnyElement
+fn render_detail<O, C>(detail: &BeadDetail, theme: &Theme, open: O, close: C) -> gpui_kit::AnyElement
 where
     O: Fn(&str, &mut Window, &mut gpui_kit::App) + Clone + 'static,
+    C: Fn(&mut Window, &mut gpui_kit::App) + 'static,
 {
     let bead = &detail.bead;
+    let now = stamp::now_epoch();
+    let blocked_by: Vec<&DepLink> = detail.dependencies.iter().filter(|l| is_blocking(l)).collect();
+    let blocks: Vec<&DepLink> = detail.dependents.iter().filter(|l| is_blocking(l)).collect();
+    let related: Vec<&DepLink> = detail
+        .dependencies
+        .iter()
+        .chain(detail.dependents.iter())
+        .filter(|l| !is_blocking(l))
+        .collect();
 
     div()
         .id("drawer-scroll")
@@ -227,91 +239,131 @@ where
         .p_4()
         .flex()
         .flex_col()
-        .gap_3()
-        .child(render_id_row(&bead.id, theme))
+        .gap_4()
+        .child(header(&bead.id, theme, close))
         .child(
             div()
                 .text_lg()
+                .font_weight(gpui_kit::FontWeight::BOLD)
                 .line_height(gpui_kit::relative(1.3))
                 .child(bead.title.clone()),
         )
-        .child(render_chips(bead, theme))
-        .children(section("Blocked by", render_links(&detail.dependencies, theme, &open), theme))
-        .children(section("Blocks", render_links(&detail.dependents, theme, &open), theme))
-        .children(section("Description", text_block(
-            detail.description.as_deref(),
-            theme,
-        ), theme))
+        .child(chips(bead, theme))
+        .children(section("Description", text_block(detail.description.as_deref(), theme), theme))
+        .children(section("Blocked by", render_links(blocked_by, theme, &open), theme))
+        .children(section("Blocks", render_links(blocks, theme, &open), theme))
+        .children(section("Related", render_links(related, theme, &open), theme))
         .children(section("Design", text_block(detail.design.as_deref(), theme), theme))
-        .children(section("Acceptance criteria", text_block(
-            detail.acceptance_criteria.as_deref(),
+        .children(section(
+            "Acceptance criteria",
+            text_block(detail.acceptance_criteria.as_deref(), theme),
             theme,
-        ), theme))
+        ))
         .children(section("Notes", text_block(detail.notes.as_deref(), theme), theme))
         .children(section("Comments", render_comments(&detail.comments, theme), theme))
+        .children(section("Details", Some(details(bead, theme, now)), theme))
+        .children(section("Commands", Some(commands(&bead.id, theme)), theme))
         .into_any_element()
 }
 
-fn render_id_row(id: &str, theme: &Theme) -> impl IntoElement {
+/// `blocks` edges drive the Blocked by and Blocks sections; all others are related.
+fn is_blocking(link: &DepLink) -> bool {
+    link.dependency_type == DepLink::BLOCKS
+}
+
+/// Title bar: id, copy-id, and close.
+fn header<C>(id: &str, theme: &Theme, close: C) -> impl IntoElement
+where
+    C: Fn(&mut Window, &mut gpui_kit::App) + 'static,
+{
     div()
         .flex()
         .items_center()
         .gap_2()
         .child(
             div()
+                .font_family(theme.mono_font_family.clone())
                 .text_sm()
                 .text_color(theme.muted_foreground)
-                .child(SharedString::from(id.to_string())),
+                .child(id.to_string()),
         )
-        .child(Clipboard::new("copy-id").value(SharedString::from(id.to_string())))
+        .child(copy_action(
+            "copy-id".to_string(),
+            "Copy ID",
+            id.to_string(),
+            theme.foreground,
+        ))
+        .child(div().flex_1())
         .child(
-            Clipboard::new("copy-show")
-                .value(SharedString::from(format!("bd show {id}")))
-                .tooltip("bd show command"),
+            div()
+                .id("drawer-close")
+                .size(px(28.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_md()
+                .text_lg()
+                .text_color(theme.muted_foreground)
+                .cursor_pointer()
+                .hover(|s| s.bg(theme.secondary))
+                .on_click(move |_, window, cx| close(window, cx))
+                .child("×"),
         )
 }
 
-fn render_chips(bead: &crate::model::Bead, theme: &Theme) -> impl IntoElement {
+/// Text button that writes `value` to the clipboard on click.
+fn copy_action(id: String, label: &str, value: String, color: gpui_kit::Hsla) -> impl IntoElement {
+    div()
+        .id(id)
+        .px_2()
+        .py_1()
+        .rounded_md()
+        .text_xs()
+        .text_color(color)
+        .cursor_pointer()
+        .hover(move |s| s.bg(color.opacity(0.12)))
+        .on_click(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(value.clone())))
+        .child(label.to_string())
+}
+
+fn chips(bead: &Bead, theme: &Theme) -> impl IntoElement {
+    let priority = priority_color(bead.priority);
+    let who = bead.assignee.clone().unwrap_or_else(|| "unassigned".to_string());
     div()
         .flex()
         .flex_wrap()
+        .items_center()
         .gap_1()
         .child(state_pill(bead.state))
         .child(
             div()
                 .text_xs()
                 .font_weight(gpui_kit::FontWeight::BOLD)
-                .text_color(priority_color(bead.priority))
+                .px_1()
+                .rounded_sm()
+                .border_1()
+                .border_color(priority)
+                .text_color(priority)
                 .child(format!("P{}", bead.priority)),
         )
         .child(
             div()
                 .text_xs()
                 .text_color(theme.muted_foreground)
-                .child(bead.issue_type.clone()),
+                .child(bead.issue_type.to_uppercase()),
         )
-        .when_some(bead.assignee.clone(), |row, who| {
-            row.child(
-                div()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child(who),
-            )
-        })
-        .children(
-            bead.labels
-                .iter()
-                .map(|l| {
-                    div()
-                        .text_xs()
-                        .px_2()
-                        .rounded_full()
-                        .bg(theme.secondary)
-                        .text_color(theme.secondary_foreground)
-                        .child(l.clone())
-                })
-                .collect::<Vec<_>>(),
-        )
+        .child(pill(who, theme))
+        .children(bead.labels.iter().map(|l| pill(l.clone(), theme)).collect::<Vec<_>>())
+}
+
+fn pill(text: String, theme: &Theme) -> impl IntoElement {
+    div()
+        .text_xs()
+        .px_2()
+        .rounded_full()
+        .bg(theme.secondary)
+        .text_color(theme.secondary_foreground)
+        .child(text)
 }
 
 fn state_pill(state: State) -> impl IntoElement {
@@ -341,7 +393,7 @@ fn section(
         div()
             .flex()
             .flex_col()
-            .gap_1()
+            .gap_2()
             .child(
                 div()
                     .text_xs()
@@ -357,60 +409,52 @@ fn text_block(text: Option<&str>, theme: &Theme) -> Option<impl IntoElement> {
     text.map(|t| {
         div()
             .text_sm()
-            .p_2()
-            .rounded_md()
-            .border_1()
-            .border_color(theme.border)
+            .p_3()
+            .rounded_lg()
+            .bg(theme.secondary)
             .child(t.to_string())
     })
 }
 
-/// Clickable dependency/dependent chips.
-fn render_links<O>(links: &[DepLink], theme: &Theme, open: &O) -> Option<impl IntoElement>
+/// Clickable dependency chips; each opens its bead in this drawer.
+fn render_links<O>(links: Vec<&DepLink>, theme: &Theme, open: &O) -> Option<impl IntoElement>
 where
     O: Fn(&str, &mut Window, &mut gpui_kit::App) + Clone + 'static,
 {
     if links.is_empty() {
         return None;
     }
-    let chips = links
-        .iter()
+    let rows = links
+        .into_iter()
         .map(|l| {
             let color = state_color(l.state());
+            let open = open.clone();
+            let id = l.id.clone();
             div()
                 .id(l.id.clone())
                 .flex()
                 .items_center()
                 .gap_2()
-                .w_full()
-                .px_2()
-                .py_1()
+                .px_3()
+                .py_2()
                 .rounded_md()
                 .border_1()
                 .border_color(theme.border)
+                .cursor_pointer()
                 .hover(|s| s.border_color(color))
-                .on_click({
-                    let id = l.id.clone();
-                    let open = open.clone();
-                    move |_, window, cx| open(&id, window, cx)
-                })
+                .on_click(move |_, window, cx| open(&id, window, cx))
                 .child(div().size(px(8.)).rounded_full().bg(color))
                 .child(
                     div()
-                        .text_xs()
-                        .flex_1()
-                        .overflow_x_hidden()
-                        .child(SharedString::from(format!("{} {}", l.id, l.title))),
-                )
-                .child(
-                    div()
+                        .font_family(theme.mono_font_family.clone())
                         .text_xs()
                         .text_color(theme.muted_foreground)
-                        .child(SharedString::from(l.dependency_type.clone())),
+                        .child(l.id.clone()),
                 )
+                .child(div().text_sm().flex_1().overflow_x_hidden().child(l.title.clone()))
         })
         .collect::<Vec<_>>();
-    Some(div().flex().flex_col().gap_1().children(chips))
+    Some(div().flex().flex_col().gap_2().children(rows))
 }
 
 fn render_comments(comments: &[Comment], theme: &Theme) -> Option<impl IntoElement> {
@@ -440,4 +484,72 @@ fn render_comments(comments: &[Comment], theme: &Theme) -> Option<impl IntoEleme
         })
         .collect::<Vec<_>>();
     Some(div().flex().flex_col().gap_2().children(blocks))
+}
+
+fn details(bead: &Bead, theme: &Theme, now: i64) -> impl IntoElement {
+    let created = match stamp::ago(&bead.created_at, now) {
+        Some(ago) => format!("{} · {ago}", stamp::absolute(&bead.created_at)),
+        None => stamp::absolute(&bead.created_at),
+    };
+    let updated = stamp::ago(&bead.updated_at, now).unwrap_or_else(|| bead.updated_at.clone());
+    div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .child(detail_row("Status", bead.status.clone(), theme))
+        .child(detail_row("Created", created, theme))
+        .child(detail_row("Updated", updated, theme))
+}
+
+fn detail_row(label: &str, value: String, theme: &Theme) -> impl IntoElement {
+    div()
+        .flex()
+        .gap_3()
+        .text_sm()
+        .child(
+            div()
+                .w(px(72.))
+                .text_color(theme.muted_foreground)
+                .child(label.to_string()),
+        )
+        .child(div().flex_1().child(value))
+}
+
+fn commands(id: &str, theme: &Theme) -> impl IntoElement {
+    let rows = [
+        format!("bd show {id}"),
+        format!("bd update {id} --claim"),
+        format!("bd close {id} \"Done\""),
+    ]
+    .into_iter()
+    .map(|cmd| command_row(cmd, theme))
+    .collect::<Vec<_>>();
+    div().flex().flex_col().gap_2().children(rows)
+}
+
+fn command_row(cmd: String, theme: &Theme) -> impl IntoElement {
+    let copy = copy_action(
+        format!("copy-{cmd}"),
+        "copy",
+        cmd.clone(),
+        gpui_kit::rgb(0x9ca3af).into(),
+    );
+    div()
+        .flex()
+        .items_center()
+        .gap_3()
+        .px_3()
+        .py_2()
+        .rounded_md()
+        .bg(gpui_kit::rgb(0x111318))
+        .child(
+            div()
+                .flex_1()
+                .overflow_x_hidden()
+                .font_family(theme.mono_font_family.clone())
+                .text_xs()
+                .text_color(gpui_kit::rgb(0xf5f5f5))
+                .child(cmd),
+        )
+        .child(copy)
 }
