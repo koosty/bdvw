@@ -22,6 +22,8 @@ pub struct ActivityView {
     /// True once any feed has been produced (first fetch done).
     loaded: bool,
     error: Option<String>,
+    /// Sweep progress as (done, total) beads; None when idle.
+    progress: Option<(usize, usize)>,
 }
 
 impl ActivityView {
@@ -31,6 +33,7 @@ impl ActivityView {
             selected: None,
             loaded: false,
             error: None,
+            progress: None,
         }
     }
 
@@ -43,12 +46,19 @@ impl ActivityView {
     ) {
         self.loaded = true;
         self.error = None;
+        self.progress = None;
         self.days = activity_feed(beads, events);
         if let Some((d, e)) = self.selected {
             if d >= self.days.len() || e >= self.days.get(d).map_or(0, |x| x.entries.len()) {
                 self.selected = None;
             }
         }
+        cx.notify();
+    }
+
+    /// Sweep progress: `done` of `total` beads fetched.
+    pub fn set_progress(&mut self, done: usize, total: usize, cx: &mut Context<Self>) {
+        self.progress = Some((done, total));
         cx.notify();
     }
 
@@ -198,6 +208,17 @@ impl Render for ActivityView {
                     .rounded_md()
                     .bg(theme.danger.opacity(0.1))
                     .child(SharedString::from(err))
+                    .into_any_element(),
+            );
+        }
+        if let Some((done, total)) = self.progress {
+            children.push(
+                div()
+                    .px_3()
+                    .py_2()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(SharedString::from(format!("Fetching history {done}/{total}")))
                     .into_any_element(),
             );
         }

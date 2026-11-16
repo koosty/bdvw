@@ -489,19 +489,26 @@ impl AppShell {
         let cache = std::mem::take(&mut self.activity_cache);
         let poll = client.poll_client();
         let activity = self.activity_view.clone();
+        let total = stale.len();
+        if total > 0 {
+            activity.update(cx, |av, cx| av.set_progress(0, total, cx));
+        }
         cx.spawn(async move |shell, cx| {
-            let cache = cx
-                .background_spawn(async move {
-                    let mut cache = cache;
-                    for (id, updated_at) in stale {
-                        // Failed fetches stay unmemoized and retry next sweep.
-                        if let Ok(evs) = poll.history(&id) {
-                            cache.insert(id, updated_at, evs);
-                        }
-                    }
-                    cache
-                })
-                .await;
+            let mut cache = cache;
+            for (done, (id, updated_at)) in stale.into_iter().enumerate() {
+                let poll = std::sync::Arc::clone(&poll);
+                let fetch_id = id.clone();
+                // Failed fetches stay unmemoized and retry next sweep.
+                let fetched = cx
+                    .background_spawn(async move { poll.history(&fetch_id) })
+                    .await;
+                if let Ok(evs) = fetched {
+                    cache.insert(id, updated_at, evs);
+                }
+                cx.update(|cx| {
+                    activity.update(cx, |av, cx| av.set_progress(done + 1, total, cx));
+                });
+            }
             let shell = shell.clone();
             cx.update(|cx| {
                 let Some(shell) = shell.upgrade() else { return };
@@ -553,7 +560,8 @@ impl Render for AppShell {
                             .flex_1()
                             .child(self.render_topbar(cx))
                             .child(self.render_main_pane(&ready, cx)),
-                    ),
+                    )
+                    .child(self.drawer.clone()),
             )
             .child(self.palette.clone())
     }
