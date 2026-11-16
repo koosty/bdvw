@@ -122,6 +122,84 @@ fn derive_state(beads: &mut [Bead]) {
     }
 }
 
+/// A dependency or dependent link as reported by `bd show --json`.
+/// `dependency_type` is one of bd's five real types (CONTEXT.md):
+/// blocks, tracks, related, parent-child, discovered-from.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DepLink {
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default = "default_dependency_type")]
+    pub dependency_type: String,
+}
+
+impl DepLink {
+    pub const BLOCKS: &'static str = "blocks";
+
+    /// Derived state of the linked bead, for chip coloring.
+    pub fn state(&self) -> State {
+        State::from_status(&self.status).unwrap_or(State::Ready)
+    }
+}
+
+fn default_dependency_type() -> String {
+    DepLink::BLOCKS.to_string()
+}
+
+/// A comment on a bead.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Comment {
+    #[serde(default)]
+    pub author: String,
+    pub text: String,
+    #[serde(default)]
+    pub created_at: String,
+}
+
+/// Full bead record from `bd show <id> --json --long
+/// --include-comments --include-dependents`. Summary fields plus detail;
+/// unknown fields tolerated.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BeadDetail {
+    #[serde(flatten)]
+    pub bead: Bead,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub design: Option<String>,
+    #[serde(default, rename = "acceptance")]
+    pub acceptance_criteria: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub dependencies: Vec<DepLink>,
+    #[serde(default)]
+    pub dependents: Vec<DepLink>,
+    #[serde(default)]
+    pub comments: Vec<Comment>,
+}
+
+impl std::ops::Deref for BeadDetail {
+    type Target = Bead;
+    fn deref(&self) -> &Bead {
+        &self.bead
+    }
+}
+
+/// Parse a `bd show <id> --json ...` single-record array.
+pub fn parse_detail(json: &str) -> Result<BeadDetail, String> {
+    let mut records: Vec<BeadDetail> = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    let mut detail = records.pop().ok_or("empty detail record")?;
+    // Re-derive state on the flattened summary bead.
+    let mut bead = detail.bead.clone();
+    derive_state(std::slice::from_mut(&mut bead));
+    detail.bead.state = bead.state;
+    Ok(detail)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -2,24 +2,26 @@
 
 use bdui::app::AppShell;
 use bdui::client::CliClient;
+use bdui::drawer::{DetailClient, Drawer};
 use bdui::store::Store;
 use gpui_kit::AppContext as _;
 use gpui_kit::WindowOptions;
 use std::rc::Rc;
 
-fn main() -> ExitCode {
-    let client = CliClient::new();
-    let mut ready = match client.ready() {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("bdui: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
-    ready.sort_by(bdui::model::Bead::ready_rank);
-    println!("Ready: {} bead(s)", ready.len());
-    for bead in &ready {
-        println!("{} P{} [{}] {}", bead.id, bead.priority, bead.issue_type, bead.title);
+struct CliShim {
+    client: CliClient,
+}
+
+impl bdui::app::BeadsClientShim for CliShim {
+    fn refresh(&self, store: &mut Store, cx: &mut gpui_kit::Context<Store>) {
+        
+        store.refresh(&self.client, cx);
+    }
+}
+
+impl DetailClient for CliShim {
+    fn detail(&self, id: &str) -> Result<bdui::model::BeadDetail, String> {
+        bdui::client::BeadsClient::detail(&self.client, id).map_err(|e| e.to_string())
     }
 }
 
@@ -28,10 +30,11 @@ fn main() {
         .with_assets(gpui_kit::assets::Assets)
         .run(|cx| {
             gpui_kit::init(cx);
-            gpui_kit::open_window(WindowOptions::default(), cx, |_, cx| {
+            gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
                 let client = Rc::new(CliShim { client: CliClient::new() });
                 let store = cx.new(|_| Store::new());
-                cx.new(|cx| AppShell::new(store, client, cx))
+                let drawer = cx.new(|_| Drawer::new(client.clone()));
+                cx.new(|cx| AppShell::new(store, client, drawer, window, cx))
             })
             .expect("failed to open window");
         });

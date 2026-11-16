@@ -1,7 +1,7 @@
 //! BeadsClient: transport trait for all bd access (CONTEXT.md).
 //! v1 implementation is the CLI transport: `bd <cmd> --json` subprocess.
 
-use crate::model::Bead;
+use crate::model::{Bead, BeadDetail};
 
 /// Transport boundary between the Store and bd. One method per CLI-shaped
 /// read; ADR-0001: no direct DB access, no HTTP in v1.
@@ -10,6 +10,9 @@ pub trait BeadsClient {
     fn list(&self) -> Result<Vec<Bead>, ClientError>;
     /// `bd ready --json` — ready work per bd's blocker-aware semantics.
     fn ready(&self) -> Result<Vec<Bead>, ClientError>;
+    /// `bd show <id> --json --long --include-comments --include-dependents`
+    /// — full record for the detail drawer.
+    fn detail(&self, id: &str) -> Result<BeadDetail, ClientError>;
 }
 
 #[derive(Debug)]
@@ -82,5 +85,12 @@ impl BeadsClient for CliClient {
     fn ready(&self) -> Result<Vec<Bead>, ClientError> {
         let out = self.run_json(&["ready"])?;
         self.parse(&out)
+    }
+
+    fn detail(&self, id: &str) -> Result<BeadDetail, ClientError> {
+        let out = self.run_json(&[
+            "show", id, "--long", "--include-comments", "--include-dependents",
+        ])?;
+        crate::model::parse_detail(&out).map_err(ClientError::Parse)
     }
 }

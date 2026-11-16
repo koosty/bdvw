@@ -39,6 +39,10 @@ pub fn priority_color(priority: u8) -> gpui_kit::Hsla {
 
 pub struct AppShell {
     store: Entity<Store>,
+    drawer: Entity<crate::drawer::Drawer>,
+    /// Index into the ready list for j/k navigation. None = no selection.
+    selected_row: Option<usize>,
+    focus_handle: gpui_kit::FocusHandle,
 }
 
 /// Transport for the shell's initial load. The Store owns refresh state;
@@ -51,10 +55,66 @@ impl AppShell {
     pub fn new(
         store: Entity<Store>,
         client: std::rc::Rc<dyn BeadsClientShim>,
+        drawer: Entity<crate::drawer::Drawer>,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         store.update(cx, |store, cx| client.refresh(store, cx));
-        Self { store }
+        let handle = cx.focus_handle();
+        window.focus(&handle, cx);
+
+        Self {
+            store,
+            drawer,
+            selected_row: None,
+            focus_handle: handle,
+        }
+    }
+
+    /// j/k move the row selection; Enter opens the drawer; Esc closes it.
+    fn handle_key(
+        &mut self,
+        event: &gpui_kit::KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if event.keystroke.modifiers != gpui_kit::Modifiers::default() {
+            return;
+        }
+        let ready = self.store.read(cx).ready();
+        match event.keystroke.key.as_str() {
+            "j" => {
+                let next = self.selected_row.map_or(0, |i| (i + 1).min(ready.len() - 1));
+                self.selected_row = Some(next);
+                cx.notify();
+            }
+            "k" => {
+                let prev = self
+                    .selected_row
+                    .map_or(0, |i| i.saturating_sub(1));
+                self.selected_row = Some(prev);
+                cx.notify();
+            }
+            "enter" => {
+                if let Some(&i) = self.selected_row.as_ref() {
+                    if let Some(bead) = ready.get(i) {
+                        let id = bead.id.clone();
+                        let drawer = self.drawer.clone();
+                        let id = id.clone();
+                        window.defer(cx, move |_, cx| {
+                            drawer.update(cx, |drawer, cx| drawer.open(&id, cx));
+                        });
+                    }
+                }
+            }
+            "escape" => {
+                let drawer = self.drawer.clone();
+                window.defer(cx, move |_, cx| {
+                    drawer.update(cx, |drawer, cx| drawer.close(cx));
+                });
+            }
+            _ => {}
+        }
     }
 }
 
@@ -64,6 +124,9 @@ impl Render for AppShell {
         let ready = self.store.read(cx).ready();
 
         div()
+            .id("shell-root")
+            .track_focus(&self.focus_handle)
+            .on_key_down(cx.listener(Self::handle_key))
             .flex()
             .size_full()
             .bg(theme.background)
@@ -174,9 +237,11 @@ impl AppShell {
 
         // Simple scroll container for v1; VirtualList swap-in comes with the
         // live-sync slice when refresh timing matters.
+        let selected = self.selected_row;
         let rows = ready
             .iter()
-            .map(|bead| self.render_row(bead, cx))
+            .enumerate()
+            .map(|(i, bead)| self.render_row(bead, Some(i) == selected, i, cx))
             .collect::<Vec<_>>();
 
         div()
@@ -188,18 +253,40 @@ impl AppShell {
             .into_any_element()
     }
 
-    fn render_row(&self, bead: &Bead, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
+    fn render_row(
+        &self,
+        bead: &Bead,
+        selected: bool,
+        idx: usize,
+        cx: &mut Context<Self>,
+    ) -> gpui_kit::AnyElement {
         let theme = cx.theme();
         let color = state_color(bead.state);
 
+        let id = bead.id.clone();
+        let row_index = idx;
         div()
+            .id(bead.id.clone())
             .flex()
             .items_center()
             .gap_2()
             .px_3()
             .py_2()
             .rounded_md()
+            .when(selected, |row| {
+                row.bg(theme.accent.opacity(0.12))
+                    .border_l_2()
+                    .border_color(theme.accent)
+            })
             .hover(|s| s.bg(theme.accent.opacity(0.06)))
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.selected_row = Some(row_index);
+                let drawer = this.drawer.clone();
+                let id = id.clone();
+                window.defer(cx, move |_, cx| {
+                    drawer.update(cx, |drawer, cx| drawer.open(&id, cx));
+                });
+            }))
             .child(div().size(px(9.)).rounded_full().bg(color))
             .child(
                 div()

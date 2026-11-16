@@ -1,0 +1,327 @@
+//! Detail drawer: right-hand column over the main pane. Ticket bdui-rs-it5.
+//! The selected bead id lives in this Drawer entity; the full record is
+//! fetched synchronously via the client seam on open.
+
+use crate::app::{priority_color, state_color};
+use crate::model::{BeadDetail, Comment, DepLink, State};
+use gpui_kit::component::clipboard::Clipboard;
+use gpui_kit::component::ActiveTheme as _;
+use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::{
+    Context, InteractiveElement as _, IntoElement, ParentElement as _, Render,
+    SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px,
+};
+use gpui_kit::component::theme::Theme;
+use std::rc::Rc;
+
+/// Transport for drawer loads (the shell's client shim adapts BeadsClient).
+pub trait DetailClient {
+    fn detail(&self, id: &str) -> Result<BeadDetail, String>;
+}
+
+/// Right-pane drawer state. Owns selection so the shell's list keeps its
+/// scroll position ("never unseats the list").
+pub struct Drawer {
+    pub selected: Option<String>,
+    detail: Option<BeadDetail>,
+    client: Rc<dyn DetailClient>,
+}
+
+impl Drawer {
+    pub fn new(client: Rc<dyn DetailClient>) -> Self {
+        Self { selected: None, detail: None, client }
+    }
+
+    /// Select a bead and load its full record. Re-selecting the same id
+    /// reloads it (cheap; external writes may have changed it).
+    pub fn open(&mut self, id: &str, cx: &mut Context<Drawer>) {
+        self.selected = Some(id.to_string());
+        self.detail = self.client.detail(id).ok();
+        cx.notify();
+    }
+
+    pub fn close(&mut self, cx: &mut Context<Drawer>) {
+        self.selected = None;
+        self.detail = None;
+        cx.notify();
+    }
+}
+
+impl Render for Drawer {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Drawer>) -> impl IntoElement {
+        let theme = cx.theme().clone();
+
+        match (&self.selected, &self.detail) {
+            (_, Some(_)) => self.render_detail(&theme, window, cx),
+            (Some(id), None) => div()
+                .w(px(430.))
+                .h_full()
+                .overflow_hidden()
+                .border_l_1()
+                .border_color(theme.border)
+                .bg(theme.background)
+                .p_4()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child("Detail")
+                .child(SharedString::from(format!("Could not load {id}.")))
+                .into_any_element(),
+            _ => div().into_any_element(),
+        }
+    }
+}
+
+impl Drawer {
+    fn render_detail(
+        &self,
+        theme: &Theme,
+        window: &mut Window,
+        cx: &mut Context<Drawer>,
+    ) -> gpui_kit::AnyElement {
+        let detail = self.detail.as_ref().expect("checked in render");
+        // Chips open the linked bead in this drawer.
+        let chip_drawer = cx.entity();
+        let open_in_drawer = move |id: &str, window: &mut Window, cx: &mut gpui_kit::App| {
+            let id = id.to_string();
+            let chip_drawer = chip_drawer.clone();
+            window.defer(cx, move |_, cx| {
+                chip_drawer.update(cx, |drawer, cx| drawer.open(&id, cx));
+            });
+        };
+        let _ = window;
+        render_detail(detail, theme, open_in_drawer)
+    }
+}
+
+fn render_detail<O>(detail: &BeadDetail, theme: &Theme, open: O) -> gpui_kit::AnyElement
+where
+    O: Fn(&str, &mut Window, &mut gpui_kit::App) + Clone + 'static,
+{
+    let bead = &detail.bead;
+
+    div()
+        .id("drawer-scroll")
+        .w(px(430.))
+        .h_full()
+        .overflow_y_scroll()
+        .border_l_1()
+        .border_color(theme.border)
+        .bg(theme.background)
+        .p_4()
+        .flex()
+        .flex_col()
+        .gap_3()
+        .child(render_id_row(&bead.id, theme))
+        .child(
+            div()
+                .text_lg()
+                .line_height(gpui_kit::relative(1.3))
+                .child(bead.title.clone()),
+        )
+        .child(render_chips(bead, theme))
+        .children(section("Blocked by", render_links(&detail.dependencies, theme, &open), theme))
+        .children(section("Blocks", render_links(&detail.dependents, theme, &open), theme))
+        .children(section("Description", text_block(
+            detail.description.as_deref(),
+            theme,
+        ), theme))
+        .children(section("Design", text_block(detail.design.as_deref(), theme), theme))
+        .children(section("Acceptance criteria", text_block(
+            detail.acceptance_criteria.as_deref(),
+            theme,
+        ), theme))
+        .children(section("Notes", text_block(detail.notes.as_deref(), theme), theme))
+        .children(section("Comments", render_comments(&detail.comments, theme), theme))
+        .into_any_element()
+}
+
+fn render_id_row(id: &str, theme: &Theme) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .gap_2()
+        .child(
+            div()
+                .text_sm()
+                .text_color(theme.muted_foreground)
+                .child(SharedString::from(id.to_string())),
+        )
+        .child(Clipboard::new("copy-id").value(SharedString::from(id.to_string())))
+        .child(
+            Clipboard::new("copy-show")
+                .value(SharedString::from(format!("bd show {id}")))
+                .tooltip("bd show command"),
+        )
+}
+
+fn render_chips(bead: &crate::model::Bead, theme: &Theme) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_wrap()
+        .gap_1()
+        .child(state_pill(bead.state))
+        .child(
+            div()
+                .text_xs()
+                .font_weight(gpui_kit::FontWeight::BOLD)
+                .text_color(priority_color(bead.priority))
+                .child(format!("P{}", bead.priority)),
+        )
+        .child(
+            div()
+                .text_xs()
+                .text_color(theme.muted_foreground)
+                .child(bead.issue_type.clone()),
+        )
+        .when_some(bead.assignee.clone(), |row, who| {
+            row.child(
+                div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(who),
+            )
+        })
+        .children(
+            bead.labels
+                .iter()
+                .map(|l| {
+                    div()
+                        .text_xs()
+                        .px_2()
+                        .rounded_full()
+                        .bg(theme.secondary)
+                        .text_color(theme.secondary_foreground)
+                        .child(l.clone())
+                })
+                .collect::<Vec<_>>(),
+        )
+}
+
+fn state_pill(state: State) -> impl IntoElement {
+    let color = state_color(state);
+    div()
+        .flex()
+        .items_center()
+        .gap_1()
+        .px_2()
+        .rounded_full()
+        .text_xs()
+        .font_weight(gpui_kit::FontWeight::SEMIBOLD)
+        .text_color(color)
+        .bg(color.opacity(0.14))
+        .child(div().size(px(7.)).rounded_full().bg(color))
+        .child(state.to_string())
+}
+
+/// A section renders only when it has content.
+fn section(
+    title: &str,
+    body: Option<impl IntoElement>,
+    theme: &Theme,
+) -> Option<impl IntoElement> {
+    let body = body?;
+    Some(
+        div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(
+                div()
+                    .text_xs()
+                    .font_weight(gpui_kit::FontWeight::SEMIBOLD)
+                    .text_color(theme.muted_foreground)
+                    .child(title.to_uppercase()),
+            )
+            .child(body),
+    )
+}
+
+fn text_block(text: Option<&str>, theme: &Theme) -> Option<impl IntoElement> {
+    text.map(|t| {
+        div()
+            .text_sm()
+            .p_2()
+            .rounded_md()
+            .border_1()
+            .border_color(theme.border)
+            .child(t.to_string())
+    })
+}
+
+/// Clickable dependency/dependent chips.
+fn render_links<O>(links: &[DepLink], theme: &Theme, open: &O) -> Option<impl IntoElement>
+where
+    O: Fn(&str, &mut Window, &mut gpui_kit::App) + Clone + 'static,
+{
+    if links.is_empty() {
+        return None;
+    }
+    let chips = links
+        .iter()
+        .map(|l| {
+            let color = state_color(l.state());
+            div()
+                .id(l.id.clone())
+                .flex()
+                .items_center()
+                .gap_2()
+                .w_full()
+                .px_2()
+                .py_1()
+                .rounded_md()
+                .border_1()
+                .border_color(theme.border)
+                .hover(|s| s.border_color(color))
+                .on_click({
+                    let id = l.id.clone();
+                    let open = open.clone();
+                    move |_, window, cx| open(&id, window, cx)
+                })
+                .child(div().size(px(8.)).rounded_full().bg(color))
+                .child(
+                    div()
+                        .text_xs()
+                        .flex_1()
+                        .overflow_x_hidden()
+                        .child(SharedString::from(format!("{} {}", l.id, l.title))),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.muted_foreground)
+                        .child(SharedString::from(l.dependency_type.clone())),
+                )
+        })
+        .collect::<Vec<_>>();
+    Some(div().flex().flex_col().gap_1().children(chips))
+}
+
+fn render_comments(comments: &[Comment], theme: &Theme) -> Option<impl IntoElement> {
+    if comments.is_empty() {
+        return None;
+    }
+    let blocks = comments
+        .iter()
+        .map(|c| {
+            div()
+                .border_l_2()
+                .border_color(theme.border)
+                .pl_3()
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.muted_foreground)
+                        .child(SharedString::from(format!(
+                            "{} · {}",
+                            c.author,
+                            c.created_at
+                        ))),
+                )
+                .child(div().text_sm().child(c.text.clone()))
+        })
+        .collect::<Vec<_>>();
+    Some(div().flex().flex_col().gap_2().children(blocks))
+}
