@@ -69,3 +69,22 @@ fn closing_blocker_frees_blocked_bead() {
     assert_eq!(ready.len(), 1);
     assert_eq!(ready[0].title, "Blocked work");
 }
+
+#[test]
+fn list_includes_closed_beads_with_closed_state() {
+    let (dir, blocker, _blocked) = workspace_with_chain();
+    let out = Command::new("bd")
+        .args(["close", &blocker])
+        .current_dir(dir.path())
+        .output()
+        .expect("close");
+    assert!(out.status.success());
+
+    let client = CliClient::in_dir(dir.path());
+    let all = client.list().expect("list works");
+    let closed = all
+        .iter()
+        .find(|b| b.id == blocker)
+        .expect("closed bead is still listed");
+    assert_eq!(closed.state, State::Closed);
+}

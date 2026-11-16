@@ -77,15 +77,15 @@ fn concurrent_invocations_serialize() {
 }
 
 #[test]
-fn poll_observes_external_close_as_removal() {
+fn poll_observes_external_close_as_closed_state() {
     let (dir, id) = workspace_with_bead();
     let client = CliClient::in_dir(dir.path());
 
     let before = client.list().expect("first list");
     assert_eq!(before.len(), 1);
 
-    // Closing removes the bead from `bd list` entirely (bd's default
-    // filter): the poll sees it as a removal, which the diff seam flags.
+    // `bd list --all` keeps closed beads, so a close is a state change for
+    // the diff seam, not a removal.
     let out = Command::new("bd")
         .args(["close", &id])
         .current_dir(dir.path())
@@ -94,6 +94,7 @@ fn poll_observes_external_close_as_removal() {
     assert!(out.status.success());
 
     let after = client.list().expect("second list");
-    assert!(after.is_empty());
+    assert_eq!(after.len(), 1);
+    assert_eq!(after[0].state, bdui::model::State::Closed);
     assert!(bdui::store::beads_differ(&before, &after));
 }

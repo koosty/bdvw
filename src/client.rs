@@ -93,7 +93,7 @@ impl Default for CliClient {
 
 impl BeadsClient for CliClient {
     fn list(&self) -> Result<Vec<Bead>, ClientError> {
-        let out = self.run_json(&["list"])?;
+        let out = self.run_json(&["list", "--all"])?;
         self.parse(&out)
     }
 

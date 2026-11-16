@@ -946,7 +946,7 @@ impl AppShell {
 
     /// Rows for the Ready view's active tab, after the shared filters.
     fn ready_rows(&self, cx: &Context<Self>) -> Vec<Bead> {
-        let visible = self.store.read(cx).filtered();
+        let visible = self.store.read(cx).filtered_for_tabs();
         crate::ready::tab_rows(&visible, self.ready_tab)
     }
 
@@ -961,7 +961,7 @@ impl AppShell {
         let theme = cx.theme().clone();
         let (counts, synced) = {
             let store = self.store.read(cx);
-            let visible = store.filtered();
+            let visible = store.filtered_for_tabs();
             let counts = crate::ready::ReadyTab::ALL
                 .map(|tab| (tab, crate::ready::tab_count(&visible, tab)));
             (counts, store.is_synced())

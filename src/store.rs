@@ -84,10 +84,23 @@ impl Store {
 
     /// All beads passing the shared filters, ready_rank sorted.
     pub fn filtered(&self) -> Vec<Bead> {
+        self.matching(&self.filters)
+    }
+
+    /// `filtered` with the Closed toggle forced on. The Ready view's Closed
+    /// tab needs closed rows whether or not the shared toggle is set; the
+    /// other tabs select by state, so they are unaffected.
+    pub fn filtered_for_tabs(&self) -> Vec<Bead> {
+        let mut filters = self.filters.clone();
+        filters.show_closed = true;
+        self.matching(&filters)
+    }
+
+    fn matching(&self, filters: &crate::tree::Filters) -> Vec<Bead> {
         let mut v: Vec<Bead> = self
             .beads
             .iter()
-            .filter(|b| self.filters.matches(b))
+            .filter(|b| filters.matches(b))
             .cloned()
             .collect();
         v.sort_by(Bead::ready_rank);
