@@ -4,12 +4,14 @@
 //! arrowheads. Layout is the pure `graph::layout_graph`.
 
 use crate::app::state_color;
-use crate::graph::{layout_graph, EdgeStyle, Graph, GraphData, COL_GAP, NODE_H, NODE_W, ROW_GAP};
+use crate::graph::{
+    collapse_graph, layout_graph, EdgeStyle, Graph, GraphData, COL_GAP, NODE_H, NODE_W, ROW_GAP,
+};
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     Bounds, Context, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render,
-    Styled as _, Window, div, px,
+    StatefulInteractiveElement as _, Styled as _, Window, div, px,
 };
 
 /// Zoom clamp, matching the prototype's zoomAt (0.15..=2.5).
@@ -69,6 +71,8 @@ impl Viewport {
 
 /// Fetched once per Store refresh by the shell; layout recomputed then.
 pub struct GraphView {
+    /// Raw parsed graph data; collapse + layout derive from this.
+    data: Option<GraphData>,
     graph: Option<Graph>,
     error: Option<String>,
     viewport: Viewport,
@@ -83,11 +87,18 @@ pub struct GraphView {
     pending_click: Option<String>,
     /// Press origin in screen pixels for the slop test.
     press_origin: (f32, f32),
+    /// Epics collapsed into single nodes; session-persistent (bdui-rs-kdr).
+    collapsed: std::collections::HashSet<String>,
+    /// Hovered node id; prototype focus dims non-neighbors until exit.
+    hovered: Option<String>,
+    /// Collapsed-child counts by node id for the current render.
+    child_counts: std::collections::HashMap<String, usize>,
 }
 
 impl GraphView {
     pub fn new() -> Self {
         Self {
+            data: None,
             graph: None,
             error: None,
             viewport: Viewport::default(),
@@ -96,6 +107,9 @@ impl GraphView {
             selected: None,
             pending_click: None,
             press_origin: (0.0, 0.0),
+            collapsed: std::collections::HashSet::new(),
+            hovered: None,
+            child_counts: std::collections::HashMap::new(),
         }
     }
 
@@ -103,17 +117,45 @@ impl GraphView {
     /// store refresh while active.
     pub fn reload(&mut self, data: &GraphData, cx: &mut Context<Self>) {
         if data.nodes.is_empty() {
+            self.data = None;
             self.graph = None;
             self.error = Some("No issues to graph.".to_string());
         } else {
-            self.graph = Some(layout_graph(data));
+            self.data = Some(data.clone());
             self.error = None;
+            self.relayout();
         }
+        cx.notify();
+    }
+
+    /// Collapse epics then lay out; call after any collapse-set change.
+    fn relayout(&mut self) {
+        let Some(data) = &self.data else { return };
+        let collapsed = collapse_graph(data, &self.collapsed);
+        let graph_data = GraphData {
+            nodes: collapsed.nodes.iter().map(|n| n.bead.clone()).collect(),
+            edges: collapsed.edges.clone(),
+        };
+        self.child_counts = collapsed
+            .nodes
+            .iter()
+            .filter_map(|n| n.child_count.map(|c| (n.bead.id.clone(), c)))
+            .collect();
+        self.graph = Some(layout_graph(&graph_data));
+    }
+
+    /// Toggle a node's collapsed state and re-lay out deterministically.
+    pub fn toggle_collapse(&mut self, id: &str, cx: &mut Context<Self>) {
+        if !self.collapsed.remove(id) {
+            self.collapsed.insert(id.to_string());
+        }
+        self.relayout();
         cx.notify();
     }
 
     /// Fetch failed surface: transport error from the shell's client call.
     pub fn reload_failed(&mut self, message: String, cx: &mut Context<Self>) {
+        self.data = None;
         self.graph = None;
         self.error = Some(message);
         cx.notify();
@@ -158,6 +200,28 @@ impl Render for GraphView {
         let vp = self.viewport;
         let selected = self.selected.clone();
 
+        // Prototype focus: hovering a node keeps it, its adjacency (over
+        // blocks/parent edges), and rel-edge endpoints; everything else
+        // dims. Incident edges highlight.
+        let hovered = self.hovered.clone();
+        let focus_set: std::collections::HashSet<String> = hovered
+            .as_deref()
+            .map(|id| {
+                let mut near = std::collections::HashSet::new();
+                near.insert(id.to_string());
+                for e in &graph.edges {
+                    // Prototype: adjacency over structural edges, plus both
+                    // endpoints of incident rel edges — together, every
+                    // edge touching the hovered node keeps its endpoints.
+                    if e.from == id || e.to == id {
+                        near.insert(e.from.clone());
+                        near.insert(e.to.clone());
+                    }
+                }
+                near
+            })
+            .unwrap_or_default();
+
         // First open: the canvas prepaint reports the pane bounds on the
         // first frame and fits the viewport there. One identity-viewport
         // frame renders before the fit lands.
@@ -183,13 +247,30 @@ impl Render for GraphView {
         let edges = graph.edges.clone();
         let edge_fg = theme.foreground.opacity(0.55);
         let edge_muted = theme.muted_foreground.opacity(0.55);
+        let hovered_edge = hovered.clone();
+        let edge_accent = theme.accent;
         let edge_canvas = gpui_kit::canvas(
             |_bounds: Bounds<Pixels>, _window: &mut Window, _cx: &mut gpui_kit::App| {},
             move |_bounds: Bounds<Pixels>, (): (), window: &mut Window, _cx: &mut gpui_kit::App| {
                 for e in &edges {
-                    let color = match e.style {
-                        EdgeStyle::Solid => edge_fg,
-                        _ => edge_muted,
+                    let incident = hovered_edge
+                        .as_deref()
+                        .is_some_and(|id| e.from == id || e.to == id);
+                    let color = match (&hovered_edge, incident) {
+                        // Focus: incident edges take the accent and stay
+                        // opaque; everything else fades to 0.07.
+                        (Some(_), true) => edge_accent,
+                        (Some(_), false) => {
+                            match e.style {
+                                EdgeStyle::Solid => edge_fg,
+                                _ => edge_muted,
+                            }
+                            .opacity(0.13)
+                        }
+                        (None, _) => match e.style {
+                            EdgeStyle::Solid => edge_fg,
+                            _ => edge_muted,
+                        },
                     };
                     // World -> screen.
                     let (x1, y1) = (vp.pan_x + e.x1 * vp.zoom, vp.pan_y + e.y1 * vp.zoom);
@@ -226,7 +307,8 @@ impl Render for GraphView {
         );
 
         let theme2 = theme.clone();
-        // Non-blocks edges carry their kind as a label at the elbow.
+        // Non-blocks edges carry their kind as a label at the elbow. Labels
+        // for non-incident edges dim with focus like their edges.
         let kind_labels = graph
             .edges
             .iter()
@@ -234,6 +316,9 @@ impl Render for GraphView {
             .map(|e| {
                 let mid_x = vp.pan_x + ((e.x1 + e.x2) / 2.0) * vp.zoom;
                 let mid_y = vp.pan_y + ((e.y1 + e.y2) / 2.0) * vp.zoom;
+                let incident = hovered
+                    .as_deref()
+                    .is_some_and(|id| e.from == id || e.to == id);
                 div()
                     .id(gpui_kit::SharedString::from(format!(
                         "graph-edge-label-{}-{}",
@@ -244,6 +329,11 @@ impl Render for GraphView {
                     .top(px(mid_y - 8.0))
                     .px_1()
                     .text_xs()
+                    .opacity(if hovered.is_some() && !incident {
+                        0.13
+                    } else {
+                        1.0
+                    })
                     .text_color(theme2.muted_foreground)
                     .child(gpui_kit::SharedString::from(e.kind.clone()))
             })
@@ -261,9 +351,15 @@ impl Render for GraphView {
                     theme2.border
                 };
                 let is_selected = selected.as_deref() == Some(bead.id.as_str());
+                let in_focus = hovered.is_none()
+                    || focus_set.contains(bead.id.as_str());
+                let child_count = self.child_counts.get(&bead.id).copied();
                 let title = bead.title.clone();
                 let id = bead.id.clone();
                 let badge_id = id.clone();
+                let hover_id = id.clone();
+                let chevron_id = id.clone();
+                let is_epic = bead.issue_type == "epic";
                 let sx = vp.pan_x + n.x * vp.zoom;
                 let sy = vp.pan_y + n.y * vp.zoom;
                 div()
@@ -274,6 +370,12 @@ impl Render for GraphView {
                     .w(px(NODE_W * vp.zoom))
                     .h(px(NODE_H * vp.zoom))
                     .rounded_md()
+                    // Focus dims non-neighbors (prototype: .22 opacity).
+                    .opacity(if in_focus { 1.0 } else { 0.22 })
+                    .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                        this.hovered = hovered.then(|| hover_id.clone());
+                        cx.notify();
+                    }))
                     .border_1()
                     .border_color(if is_selected {
                         theme2.accent
@@ -328,6 +430,40 @@ impl Render for GraphView {
                             .text_ellipsis()
                             .child(gpui_kit::SharedString::from(title)),
                     )
+                    .when(is_epic, |el| {
+                        // Chevron + hidden-child count; click toggles
+                        // collapse. Sits in the node's top-right corner.
+                        el.child(
+                            div()
+                                .id(gpui_kit::SharedString::from(format!(
+                                    "graph-collapse-{chevron_id}"
+                                )))
+                                .absolute()
+                                .right_1()
+                                .top_1()
+                                .px_1()
+                                .rounded_sm()
+                                .text_xs()
+                                .text_color(theme2.accent)
+                                .on_mouse_down(
+                                    gpui_kit::MouseButton::Left,
+                                    cx.listener(move |this, _, _, cx| {
+                                        // The node press also fired; the
+                                        // click would open the drawer, so
+                                        // cancel it — this press toggles.
+                                        this.pending_click = None;
+                                        this.toggle_collapse(&chevron_id, cx);
+                                    }),
+                                )
+                                .child(gpui_kit::SharedString::from(format!(
+                                    "{}{}",
+                                    if child_count.is_some() { "▾" } else { "▸" },
+                                    child_count
+                                        .map(|c| format!(" {c}"))
+                                        .unwrap_or_default()
+                                ))),
+                        )
+                    })
             })
             .collect::<Vec<_>>();
 

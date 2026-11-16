@@ -72,6 +72,147 @@ pub struct GraphData {
     pub edges: Vec<DepEdge>,
 }
 
+/// A graph node carrying collapse metadata: `child_count` is Some(n) on
+/// epics whose subtree is currently hidden.
+#[derive(Debug, Clone)]
+pub struct CollapsedNode {
+    pub bead: Bead,
+    /// Hidden direct+descendant count when this epic is collapsed.
+    pub child_count: Option<usize>,
+}
+
+/// Graph after epic collapse: hidden subtree nodes removed, their outside
+/// edges rewritten to point at the epic root, epics tagged with child counts.
+#[derive(Debug, Clone, Default)]
+pub struct CollapsedGraph {
+    pub nodes: Vec<CollapsedNode>,
+    pub edges: Vec<DepEdge>,
+}
+
+/// Collapse every epic in `collapsed` (by id) into a single node.
+///
+/// - The hidden set is the full descendant closure over `parent-child`
+///   edges pointing at a collapsed epic (nested children included).
+/// - An edge between two hidden nodes disappears; an edge between a hidden
+///   node and a visible one is re-anchored to the collapsed epic root.
+///   Re-anchored `blocks` edges keep blocking the epic (bd's layered model
+///   treats the epic as the unit of work).
+/// - Collapsed epics get `child_count` = hidden-subtree size.
+pub fn collapse_graph(data: &GraphData, collapsed: &std::collections::HashSet<String>) -> CollapsedGraph {
+    // Descendents of each collapsed epic over parent-child edges:
+    // dep entry "issue_id child depends_on_id parent" means child has parent.
+    let mut children_of: std::collections::HashMap<&str, Vec<&str>> =
+        std::collections::HashMap::new();
+    for e in &data.edges {
+        if e.kind == "parent-child" {
+            children_of.entry(e.from.as_str()).or_default().push(e.to.as_str());
+        }
+    }
+    let in_graph =
+        |id: &str| data.nodes.iter().any(|n| n.id == id);
+
+    // Hidden = descendant closure of collapsed epics.
+    let mut hidden: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for root in collapsed {
+        let mut stack = children_of
+            .get(root.as_str())
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
+            .to_vec();
+        while let Some(id) = stack.pop() {
+            if !in_graph(id) || hidden.contains(id) {
+                continue;
+            }
+            hidden.insert(id);
+            if let Some(kids) = children_of.get(id) {
+                stack.extend(kids.iter().copied());
+            }
+        }
+    }
+
+    // Root epic of a hidden node: nearest collapsed ancestor.
+    let root_of = |id: &str| -> Option<&str> {
+        if !hidden.contains(id) {
+            return None;
+        }
+        let mut current = id;
+        loop {
+            let parent = data.edges.iter().find_map(|e| {
+                (e.kind == "parent-child" && e.to == current)
+                    .then_some(e.from.as_str())
+            });
+            match parent {
+                Some(p) if hidden.contains(p) => current = p,
+                Some(p) if collapsed.contains(p) => return Some(p),
+                _ => return None,
+            }
+        }
+    };
+
+    let nodes = data
+        .nodes
+        .iter()
+        .filter(|n| !hidden.contains(n.id.as_str()))
+        .map(|bead| CollapsedNode {
+            bead: bead.clone(),
+            child_count: (bead.issue_type == "epic" && collapsed.contains(&bead.id))
+                .then(|| {
+                    // Count hidden descendants rooted here.
+                    let mut count = 0usize;
+                    let mut stack = children_of
+                        .get(bead.id.as_str())
+                        .map(|v| v.as_slice())
+                        .unwrap_or(&[])
+                        .to_vec();
+                    let mut seen = std::collections::HashSet::new();
+                    while let Some(id) = stack.pop() {
+                        if !in_graph(id) || !seen.insert(id) {
+                            continue;
+                        }
+                        if root_of(id) == Some(bead.id.as_str()) {
+                            count += 1;
+                        }
+                        if let Some(kids) = children_of.get(id) {
+                            stack.extend(kids.iter().copied());
+                        }
+                    }
+                    count
+                }),
+        })
+        .collect();
+
+    // Edges: drop hidden-hidden; re-anchor hidden-visible to root epic.
+    let edges: Vec<DepEdge> = data
+        .edges
+        .iter()
+        .filter_map(|e| {
+            let reanchor = |who: &str| {
+                if hidden.contains(who) {
+                    root_of(who).map(|r| r.to_string())
+                } else {
+                    None
+                }
+            };
+            let from = reanchor(&e.from).unwrap_or_else(|| e.from.clone());
+            let to = reanchor(&e.to).unwrap_or_else(|| e.to.clone());
+            if from == to {
+                return None; // internal to the collapsed subtree
+            }
+            Some(DepEdge { from, to, kind: e.kind.clone() })
+        })
+        .collect();
+
+    // Visible nodes whose edges were re-anchored keep their other edges;
+    // dedup identical contracted edges (same from/to/kind).
+    let mut seen = std::collections::HashSet::new();
+    let edges = edges
+        .into_iter()
+        .filter(|e| seen.insert((e.from.clone(), e.to.clone(), e.kind.clone())))
+        .collect();
+
+    CollapsedGraph { nodes, edges }
+}
+
 pub fn parse_components(json: &str) -> Result<GraphData, String> {
     let components: Vec<Component> =
         serde_json::from_str(json).map_err(|e| format!("graph json: {e}"))?;
