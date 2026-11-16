@@ -1157,9 +1157,9 @@ impl AppShell {
             .py(px(6.))
             .when(idx > 0, |row| row.border_t_1().border_color(theme.border))
             .when(selected, |row| {
-                row.bg(theme.accent.opacity(0.12))
+                row.bg(theme.primary.opacity(0.12))
                     .border_l_2()
-                    .border_color(theme.accent)
+                    .border_color(theme.primary)
             })
             .hover(|s| s.bg(theme.accent.opacity(0.06)))
             .on_click(cx.listener(move |this, _, window, cx| {

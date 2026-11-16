@@ -135,9 +135,9 @@ impl ActivityView {
             .py_1()
             .rounded_md()
             .when(selected, |el| {
-                el.bg(theme.accent.opacity(0.12))
+                el.bg(theme.primary.opacity(0.12))
                     .border_l_2()
-                    .border_color(theme.accent)
+                    .border_color(theme.primary)
             })
             .hover(|s| s.bg(theme.accent.opacity(0.06)))
             .on_click(cx.listener(move |_, _, _, cx| {

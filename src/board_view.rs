@@ -107,7 +107,7 @@ impl BoardView {
             .border_color(theme.border)
             .bg(theme.secondary)
             .when(selected, |el| {
-                el.border_color(theme.accent).shadow_md()
+                el.border_color(theme.primary).shadow_md()
             })
             .hover(|s| s.border_color(theme.accent.opacity(0.5)))
             .on_click(cx.listener(move |_, _, _, cx| {
