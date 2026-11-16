@@ -1,7 +1,7 @@
 //! Seam S2: CliClient::graph against a real bd workspace.
 
-use bdui::client::{BeadsClient, CliClient};
-use bdui::graph::{layout_graph, EdgeStyle};
+use bdvw::client::{BeadsClient, CliClient};
+use bdvw::graph::{layout_graph, EdgeStyle};
 use std::process::Command;
 
 fn workspace() -> (tempfile::TempDir, String, String, String) {
@@ -23,7 +23,10 @@ fn workspace() -> (tempfile::TempDir, String, String, String) {
             "bd q {title} failed: {}",
             String::from_utf8_lossy(&out.stderr)
         );
-        String::from_utf8(out.stdout).expect("utf8").trim().to_string()
+        String::from_utf8(out.stdout)
+            .expect("utf8")
+            .trim()
+            .to_string()
     };
     let alpha = q("Alpha root");
     let beta = q("Beta middle");
@@ -73,7 +76,8 @@ fn graph_layout_layers_the_chain() {
     assert_eq!(layer(&alpha), 0);
     assert_eq!(layer(&beta), 1);
     assert_eq!(layer(&gamma), 2);
-    assert!(laid.edges.iter().any(|e| e.from == beta
-        && e.to == gamma
-        && e.style == EdgeStyle::Solid));
+    assert!(laid
+        .edges
+        .iter()
+        .any(|e| e.from == beta && e.to == gamma && e.style == EdgeStyle::Solid));
 }

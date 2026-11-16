@@ -1,6 +1,6 @@
 //! S1: startup argument parsing (--dir workspace selection).
 
-use bdui::startup::{parse, resolve_dir, Startup};
+use bdvw::startup::{parse, resolve_dir, Startup};
 use std::path::PathBuf;
 
 fn args(raw: &[&str]) -> Vec<String> {
@@ -16,11 +16,15 @@ fn no_arguments_runs_in_current_directory() {
 fn dir_flag_accepts_separate_and_inline_forms() {
     assert_eq!(
         parse(&args(&["--dir", "/tmp/ws"])),
-        Ok(Startup::Run { dir: Some(PathBuf::from("/tmp/ws")) })
+        Ok(Startup::Run {
+            dir: Some(PathBuf::from("/tmp/ws"))
+        })
     );
     assert_eq!(
         parse(&args(&["--dir=/tmp/ws"])),
-        Ok(Startup::Run { dir: Some(PathBuf::from("/tmp/ws")) })
+        Ok(Startup::Run {
+            dir: Some(PathBuf::from("/tmp/ws"))
+        })
     );
 }
 
@@ -35,7 +39,10 @@ fn bad_arguments_are_errors_with_usage() {
     let missing = parse(&args(&["--dir"])).unwrap_err();
     assert!(missing.contains("--dir needs a path"), "{missing}");
     let unknown = parse(&args(&["--verbose"])).unwrap_err();
-    assert!(unknown.contains("unknown argument '--verbose'"), "{unknown}");
+    assert!(
+        unknown.contains("unknown argument '--verbose'"),
+        "{unknown}"
+    );
     assert!(unknown.contains("Usage:"), "{unknown}");
     let empty = parse(&args(&["--dir="])).unwrap_err();
     assert!(empty.contains("--dir needs a path"), "{empty}");
@@ -44,7 +51,10 @@ fn bad_arguments_are_errors_with_usage() {
 #[test]
 fn resolve_rejects_missing_paths_and_files() {
     let dir = tempfile::tempdir().unwrap();
-    assert_eq!(resolve_dir(dir.path()).unwrap(), dir.path().canonicalize().unwrap());
+    assert_eq!(
+        resolve_dir(dir.path()).unwrap(),
+        dir.path().canonicalize().unwrap()
+    );
 
     let file = dir.path().join("file.txt");
     std::fs::write(&file, b"x").unwrap();
@@ -52,4 +62,22 @@ fn resolve_rejects_missing_paths_and_files() {
 
     let missing = dir.path().join("nope");
     assert!(resolve_dir(&missing).is_err());
+}
+
+#[test]
+fn version_wins_and_short_circuits() {
+    assert_eq!(parse(&args(&["--version"])), Ok(Startup::Version));
+    assert_eq!(parse(&args(&["-V"])), Ok(Startup::Version));
+    // Like --help, it short-circuits arguments that follow.
+    assert_eq!(parse(&args(&["-V", "--dir"])), Ok(Startup::Version));
+}
+
+#[test]
+fn version_matches_the_manifest() {
+    assert_eq!(bdui_version(), env!("CARGO_PKG_VERSION"));
+    assert!(bdui_version().starts_with("0.1.0-alpha"));
+}
+
+fn bdui_version() -> &'static str {
+    bdvw::startup::VERSION
 }

@@ -1,8 +1,8 @@
 [package]
-name = "bdui"
-version = "0.1.0"
+name = "bdvw"
+version = "0.1.0-alpha.1"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.92"
 description = "Desktop viewer for bd (beads) issue trackers"
 repository = "https://github.com/koosty/bdvw"
 license = "MIT"

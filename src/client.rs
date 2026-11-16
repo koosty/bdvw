@@ -55,12 +55,18 @@ pub struct CliClient {
 
 impl CliClient {
     pub fn new() -> Self {
-        Self { cwd: None, lock: std::sync::Mutex::new(()) }
+        Self {
+            cwd: None,
+            lock: std::sync::Mutex::new(()),
+        }
     }
 
     /// Point at a specific beads workspace directory.
     pub fn in_dir(cwd: impl Into<std::path::PathBuf>) -> Self {
-        Self { cwd: Some(cwd.into()), lock: std::sync::Mutex::new(()) }
+        Self {
+            cwd: Some(cwd.into()),
+            lock: std::sync::Mutex::new(()),
+        }
     }
 
     fn run_json(&self, args: &[&str]) -> Result<String, ClientError> {
@@ -71,7 +77,9 @@ impl CliClient {
         if let Some(dir) = &self.cwd {
             cmd.current_dir(dir);
         }
-        let out = cmd.output().map_err(|e| ClientError::Spawn(e.to_string()))?;
+        let out = cmd
+            .output()
+            .map_err(|e| ClientError::Spawn(e.to_string()))?;
         if !out.status.success() {
             return Err(ClientError::Output(
                 String::from_utf8_lossy(&out.stderr).trim().to_string(),
@@ -104,13 +112,16 @@ impl BeadsClient for CliClient {
 
     fn history(&self, id: &str) -> Result<Vec<crate::activity::ActivityEvent>, ClientError> {
         let json = self.run_json(&["history", id, "--events"])?;
-        crate::activity::parse_events(&json)
-            .map_err(ClientError::Parse)
+        crate::activity::parse_events(&json).map_err(ClientError::Parse)
     }
 
     fn detail(&self, id: &str) -> Result<BeadDetail, ClientError> {
         let out = self.run_json(&[
-            "show", id, "--long", "--include-comments", "--include-dependents",
+            "show",
+            id,
+            "--long",
+            "--include-comments",
+            "--include-dependents",
         ])?;
         crate::model::parse_detail(&out).map_err(ClientError::Parse)
     }

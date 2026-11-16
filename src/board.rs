@@ -50,8 +50,10 @@ fn is_epic_parent(bead: &Bead, children: &HashMap<&str, usize>) -> bool {
 /// the source. A blocker is open when its status is not `closed`; `bd`
 /// list rows do not carry the target, so status comes from the set.
 pub fn derive_cards(beads: &[Bead]) -> Vec<BoardCard> {
-    let status: HashMap<&str, &str> =
-        beads.iter().map(|b| (b.id.as_str(), b.status.as_str())).collect();
+    let status: HashMap<&str, &str> = beads
+        .iter()
+        .map(|b| (b.id.as_str(), b.status.as_str()))
+        .collect();
     let mut children: HashMap<&str, usize> = HashMap::new();
     for b in beads {
         for dep in &b.raw_deps {
@@ -73,7 +75,10 @@ pub fn derive_cards(beads: &[Bead]) -> Vec<BoardCard> {
                 .map(|s| *s != "closed")
                 .unwrap_or(false);
             if target_open {
-                blockers.entry(b.id.as_str()).or_default().push(dep.depends_on_id.clone());
+                blockers
+                    .entry(b.id.as_str())
+                    .or_default()
+                    .push(dep.depends_on_id.clone());
                 *unblocks.entry(dep.depends_on_id.as_str()).or_insert(0) += 1;
             }
         }

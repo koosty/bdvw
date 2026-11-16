@@ -2,7 +2,7 @@
 //! Seam S1: parse + derive over fixture JSON captured from `bd list --json`.
 //! Expected states are hand-labeled, not recomputed.
 
-use bdui::model::{parse_summary, Bead, State};
+use bdvw::model::{parse_summary, Bead, State};
 
 /// Fixture: recorded shape of `bd list --json` rows (verified against a
 /// real workspace, 2026-11-16). Five beads covering every state.
@@ -35,7 +35,11 @@ fn states_follow_from_status() {
     let beads = parse();
     let by = |id: &str| beads.iter().find(|b| b.id == id).unwrap();
     // Hand-labeled expectations, one per stored status.
-    assert_eq!(by("bd-w1").state, State::Ready, "open with no blockers is ready");
+    assert_eq!(
+        by("bd-w1").state,
+        State::Ready,
+        "open with no blockers is ready"
+    );
     assert_eq!(by("bd-w2").state, State::InProgress);
     assert_eq!(by("bd-w3").state, State::Blocked);
     assert_eq!(by("bd-w4").state, State::Deferred);

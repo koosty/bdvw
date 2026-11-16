@@ -1,7 +1,7 @@
 //! Seam S2: CliClient::detail against the real `bd` CLI in a throwaway
 //! workspace. Companion to the list/ready integration tests.
 
-use bdui::client::{BeadsClient, CliClient};
+use bdvw::client::{BeadsClient, CliClient};
 use std::process::Command;
 
 /// Chain: alpha blocks beta; beta has a comment.

@@ -3,31 +3,31 @@
 
 use crate::client::BeadsClient as _;
 use crate::model::{Bead, State};
-use gpui_kit::AppContext as _;
 use crate::store::Store;
+use gpui_kit::assets::IconName;
+use gpui_kit::component::clipboard::Clipboard;
 use gpui_kit::component::sidebar::{
     Sidebar, SidebarFooter, SidebarGroup, SidebarHeader, SidebarMenu, SidebarMenuItem,
 };
-use gpui_kit::assets::IconName;
 use gpui_kit::component::ActiveTheme;
-use gpui_kit::component::WindowExt as _;
-use gpui_kit::component::clipboard::Clipboard;
 use gpui_kit::component::TitleBar;
+use gpui_kit::component::WindowExt as _;
 use gpui_kit::prelude::FluentBuilder as _;
+use gpui_kit::AppContext as _;
 use gpui_kit::{
-    Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
-    Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px, rgb,
+    div, px, rgb, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
+    Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
 };
 
 /// Colors keyed to derived state (CONTEXT.md: State), not priority.
 /// Dark-mode-first palette from the prototype's tokens.
 pub fn state_color(state: &State) -> gpui_kit::Hsla {
     match state {
-        State::Ready => rgb(0x3ccf7e).into(),   // --ready (dark)
+        State::Ready => rgb(0x3ccf7e).into(),      // --ready (dark)
         State::InProgress => rgb(0x6aa0ff).into(), // --progress
-        State::Blocked => rgb(0xff6b5e).into(),  // --blocked
-        State::Deferred => rgb(0xb794f4).into(), // --deferred
-        State::Closed => rgb(0x6b7486).into(),   // --closed
+        State::Blocked => rgb(0xff6b5e).into(),    // --blocked
+        State::Deferred => rgb(0xb794f4).into(),   // --deferred
+        State::Closed => rgb(0x6b7486).into(),     // --closed
         // Unmapped status: neutral, so it never reads as ready work.
         State::Custom(_) => rgb(0x9aa4b2).into(),
     }
@@ -216,17 +216,20 @@ impl AppShell {
             gpui_kit::component::input::InputState::new(window, cx)
                 .placeholder("Search id, title, label, assignee…")
         });
-        cx.subscribe(&search_input, |shell, input, event: &gpui_kit::component::input::InputEvent, cx| {
-            if matches!(event, gpui_kit::component::input::InputEvent::Change) {
-                let q = input.read(cx).value().to_string();
-                let store = shell.store.clone();
-                store.update(cx, |store, cx| {
-                    let mut f = store.filters().clone();
-                    f.query = q;
-                    store.set_filters(f, cx);
-                });
-            }
-        })
+        cx.subscribe(
+            &search_input,
+            |shell, input, event: &gpui_kit::component::input::InputEvent, cx| {
+                if matches!(event, gpui_kit::component::input::InputEvent::Change) {
+                    let q = input.read(cx).value().to_string();
+                    let store = shell.store.clone();
+                    store.update(cx, |store, cx| {
+                        let mut f = store.filters().clone();
+                        f.query = q;
+                        store.set_filters(f, cx);
+                    });
+                }
+            },
+        )
         .detach();
 
         // Live-sync poll (bdui-rs-7lr): every 2s fetch the list off-thread,
@@ -234,46 +237,33 @@ impl AppShell {
         // client serializes invocations internally.
         {
             let client = std::sync::Arc::clone(&client.poll_client());
-            cx.spawn(async move |shell, cx| {
-                loop {
-                    cx.background_executor()
-                        .timer(std::time::Duration::from_secs(2))
-                        .await;
-                    let fetch = std::sync::Arc::clone(&client);
-                    let fetched = cx
-                        .background_spawn(async move { fetch.list() })
-                        .await;
-                    let shell = shell.clone();
-                    cx.update(|cx| {
-                        let Some(shell) = shell.upgrade() else { return };
-                        shell.update(cx, |shell, cx| {
-                            match fetched {
-                                Ok(beads) => {
-                                    let store = shell.store.clone();
-                                    let drawer = shell.drawer.clone();
-                                    let changed = store.update(cx, |store, cx| {
-                                        store.apply_beads(beads, cx)
-                                    });
-                                    if changed {
-                                        if let Some(_id) =
-                                            drawer.read(cx).open_id()
-                                        {
-                                            drawer.update(cx, |drawer, cx| {
-                                                drawer.refresh(cx)
-                                            });
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    let store = shell.store.clone();
-                                    store.update(cx, |store, cx| {
-                                        store.set_sync_error(e.to_string(), cx)
-                                    });
+            cx.spawn(async move |shell, cx| loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(2))
+                    .await;
+                let fetch = std::sync::Arc::clone(&client);
+                let fetched = cx.background_spawn(async move { fetch.list() }).await;
+                let shell = shell.clone();
+                cx.update(|cx| {
+                    let Some(shell) = shell.upgrade() else { return };
+                    shell.update(cx, |shell, cx| match fetched {
+                        Ok(beads) => {
+                            let store = shell.store.clone();
+                            let drawer = shell.drawer.clone();
+                            let changed =
+                                store.update(cx, |store, cx| store.apply_beads(beads, cx));
+                            if changed {
+                                if let Some(_id) = drawer.read(cx).open_id() {
+                                    drawer.update(cx, |drawer, cx| drawer.refresh(cx));
                                 }
                             }
-                        })
-                    });
-                }
+                        }
+                        Err(e) => {
+                            let store = shell.store.clone();
+                            store.update(cx, |store, cx| store.set_sync_error(e.to_string(), cx));
+                        }
+                    })
+                });
             })
             .detach();
         }
@@ -439,14 +429,14 @@ impl AppShell {
                 if ready.is_empty() {
                     return;
                 }
-                let next = self.selected_row.map_or(0, |i| (i + 1).min(ready.len() - 1));
+                let next = self
+                    .selected_row
+                    .map_or(0, |i| (i + 1).min(ready.len() - 1));
                 self.selected_row = Some(next);
                 cx.notify();
             }
             "k" => {
-                let prev = self
-                    .selected_row
-                    .map_or(0, |i| i.saturating_sub(1));
+                let prev = self.selected_row.map_or(0, |i| i.saturating_sub(1));
                 self.selected_row = Some(prev);
                 cx.notify();
             }
@@ -493,11 +483,7 @@ impl AppShell {
     /// moved since the last sweep are refetched; the rest come from the memo.
     /// One sweep in flight at a time. A request that arrives mid-sweep sets
     /// `activity_dirty` and reruns on completion, so no store change is lost.
-    fn refresh_activity(
-        &mut self,
-        client: &dyn BeadsClientShim,
-        cx: &mut Context<Self>,
-    ) {
+    fn refresh_activity(&mut self, client: &dyn BeadsClientShim, cx: &mut Context<Self>) {
         if self.activity_in_flight {
             self.activity_dirty = true;
             return;
@@ -547,7 +533,6 @@ impl AppShell {
         })
         .detach();
     }
-
 }
 
 impl Render for AppShell {
@@ -607,34 +592,51 @@ impl AppShell {
         };
         let source = std::env::current_dir()
             .ok()
-            .and_then(|dir| dir.file_name().map(|name| name.to_string_lossy().into_owned()))
+            .and_then(|dir| {
+                dir.file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
             .unwrap_or_else(|| "bd".to_string());
 
         let views = [
-            (crate::palette::ViewKind::Ready, "Ready", IconName::CircleCheck),
+            (
+                crate::palette::ViewKind::Ready,
+                "Ready",
+                IconName::CircleCheck,
+            ),
             (crate::palette::ViewKind::Tree, "Tree", IconName::FolderOpen),
             (crate::palette::ViewKind::Graph, "Graph", IconName::Network),
-            (crate::palette::ViewKind::Board, "Board", IconName::LayoutDashboard),
-            (crate::palette::ViewKind::Activity, "Activity", IconName::Bell),
+            (
+                crate::palette::ViewKind::Board,
+                "Board",
+                IconName::LayoutDashboard,
+            ),
+            (
+                crate::palette::ViewKind::Activity,
+                "Activity",
+                IconName::Bell,
+            ),
         ];
-        let menu = views.into_iter().fold(SidebarMenu::new(), |menu, (view, label, icon)| {
-            let shell = shell.clone();
-            let item = SidebarMenuItem::new(label)
-                .icon(icon)
-                .active(self.active_view == view)
-                .on_click(move |_, _, cx| {
-                    shell.update(cx, |this, cx| {
-                        let client = this.client.clone();
-                        this.go_to_view(view, client.as_ref(), cx);
+        let menu = views
+            .into_iter()
+            .fold(SidebarMenu::new(), |menu, (view, label, icon)| {
+                let shell = shell.clone();
+                let item = SidebarMenuItem::new(label)
+                    .icon(icon)
+                    .active(self.active_view == view)
+                    .on_click(move |_, _, cx| {
+                        shell.update(cx, |this, cx| {
+                            let client = this.client.clone();
+                            this.go_to_view(view, client.as_ref(), cx);
+                        });
                     });
-                });
-            let item = if view == crate::palette::ViewKind::Ready {
-                item.suffix(move |_, _| div().text_xs().child(ready_count.to_string()))
-            } else {
-                item
-            };
-            menu.child(item)
-        });
+                let item = if view == crate::palette::ViewKind::Ready {
+                    item.suffix(move |_, _| div().text_xs().child(ready_count.to_string()))
+                } else {
+                    item
+                };
+                menu.child(item)
+            });
 
         Sidebar::new("sidebar")
             .header(
@@ -666,15 +668,11 @@ impl AppShell {
     /// until their slices land.
     fn render_main_pane(&self, ready: &[Bead], cx: &mut Context<Self>) -> gpui_kit::AnyElement {
         match self.active_view {
-            crate::palette::ViewKind::Ready => self
-                .render_ready_list(ready, cx)
-                .into_any_element(),
+            crate::palette::ViewKind::Ready => self.render_ready_list(ready, cx).into_any_element(),
             crate::palette::ViewKind::Graph => self.graph_view.clone().into_any_element(),
             crate::palette::ViewKind::Tree => self.tree_view.clone().into_any_element(),
             crate::palette::ViewKind::Board => self.board_view.clone().into_any_element(),
-            crate::palette::ViewKind::Activity => {
-                self.activity_view.clone().into_any_element()
-            }
+            crate::palette::ViewKind::Activity => self.activity_view.clone().into_any_element(),
             view => {
                 let theme = cx.theme().clone();
                 div()
@@ -780,17 +778,17 @@ impl AppShell {
             let store = self.store.read(cx);
             let filters = store.filters().clone();
             let types: Vec<String> = {
-            let mut v: Vec<String> = store
-                .beads()
-                .iter()
-                .map(|b| b.issue_type.clone())
-                .filter(|t| !t.is_empty())
-                .collect();
-            v.sort();
-            v.dedup();
-            v
-        };
-        
+                let mut v: Vec<String> = store
+                    .beads()
+                    .iter()
+                    .map(|b| b.issue_type.clone())
+                    .filter(|t| !t.is_empty())
+                    .collect();
+                v.sort();
+                v.dedup();
+                v
+            };
+
             let who: Vec<String> = {
                 let mut v: Vec<String> = store
                     .beads()
@@ -945,7 +943,10 @@ impl AppShell {
                 .text_xs()
                 .border_1()
                 .border_color(if on { theme.accent } else { theme.border })
-                .when(on, |el| el.bg(theme.accent.opacity(0.12)).text_color(theme.foreground))
+                .when(on, |el| {
+                    el.bg(theme.accent.opacity(0.12))
+                        .text_color(theme.foreground)
+                })
                 .hover(|s| s.bg(theme.accent.opacity(0.08)))
                 .on_click(cx.listener(move |_, _, _, cx| {
                     store.update(cx, |store, cx| {
@@ -1018,10 +1019,19 @@ impl AppShell {
                 .border_color(if on { theme.accent } else { theme.border })
                 .when(on, |el| el.bg(theme.accent.opacity(0.12)))
                 .text_sm()
-                .text_color(if on { theme.foreground } else { theme.muted_foreground })
+                .text_color(if on {
+                    theme.foreground
+                } else {
+                    theme.muted_foreground
+                })
                 .hover(|s| s.bg(theme.accent.opacity(0.06)))
                 .on_click(cx.listener(move |this, _, _, cx| this.select_ready_tab(tab, cx)))
-                .child(div().size(px(7.)).rounded_full().bg(state_color(&tab.state())))
+                .child(
+                    div()
+                        .size(px(7.))
+                        .rounded_full()
+                        .bg(state_color(&tab.state())),
+                )
                 .child(tab.label())
                 .child(
                     div()
@@ -1124,7 +1134,6 @@ impl AppShell {
             .children(suggested)
             .child(list)
     }
-
 
     /// One popover option row; click applies `set` to the store filters.
     fn filter_option<F>(
@@ -1257,18 +1266,20 @@ impl AppShell {
                         .child(bead.issue_type.to_uppercase()),
                 )
             })
-            .when(bead.assignee.as_deref().is_some_and(|a| !a.is_empty()), |row| {
-                row.child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.muted_foreground)
-                        .child(bead.assignee.clone().unwrap_or_default()),
-                )
-            })
+            .when(
+                bead.assignee.as_deref().is_some_and(|a| !a.is_empty()),
+                |row| {
+                    row.child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.muted_foreground)
+                            .child(bead.assignee.clone().unwrap_or_default()),
+                    )
+                },
+            )
             .into_any_element()
     }
 }
-
 
 /// Helper indirection: run a palette pick (closes palette, opens drawer/view).
 fn shell_palette_pick(

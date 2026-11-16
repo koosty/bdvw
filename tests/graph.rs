@@ -1,6 +1,6 @@
 //! S1 seam: deterministic DAG layout over fixture graph JSON.
 
-use bdui::graph::{EdgeStyle, Graph, layout_graph, parse_components, DepEdge};
+use bdvw::graph::{layout_graph, parse_components, DepEdge, EdgeStyle, Graph};
 use serde_json::json;
 
 fn issue(id: &str, title: &str, priority: u8) -> serde_json::Value {
@@ -17,7 +17,11 @@ fn issue(id: &str, title: &str, priority: u8) -> serde_json::Value {
     })
 }
 
-fn component(root: &str, issues: Vec<serde_json::Value>, deps: Vec<serde_json::Value>) -> serde_json::Value {
+fn component(
+    root: &str,
+    issues: Vec<serde_json::Value>,
+    deps: Vec<serde_json::Value>,
+) -> serde_json::Value {
     json!({ "Root": issue(root, root, 2), "Issues": issues, "Dependencies": deps })
 }
 
@@ -69,7 +73,11 @@ fn transitive_chain_layers_increase() {
 fn column_order_is_priority_then_id() {
     let raw = json!([component(
         "c",
-        vec![issue("b2", "B two", 2), issue("b1", "B one", 2), issue("a1", "A one", 1)],
+        vec![
+            issue("b2", "B two", 2),
+            issue("b1", "B one", 2),
+            issue("a1", "A one", 1)
+        ],
         vec![]
     )]);
     let data = parse_components(&raw.to_string()).expect("parse");
@@ -109,7 +117,13 @@ fn layout_is_deterministic() {
 fn edge_styles_map_to_dependency_types() {
     let raw = json!([component(
         "z",
-        vec![issue("a", "A", 2), issue("b", "B", 2), issue("c", "C", 2), issue("d", "D", 2), issue("e", "E", 2)],
+        vec![
+            issue("a", "A", 2),
+            issue("b", "B", 2),
+            issue("c", "C", 2),
+            issue("d", "D", 2),
+            issue("e", "E", 2)
+        ],
         vec![
             dep("b", "a", "blocks"),
             dep("c", "a", "parent-child"),
@@ -191,7 +205,7 @@ fn null_dependencies_parse_as_empty() {
 /// zero-width vertical line drawn through the column.
 #[test]
 fn same_layer_edges_route_around_the_right_edge() {
-    use bdui::graph::{NODE_W, SAME_LAYER_STUB};
+    use bdvw::graph::{NODE_W, SAME_LAYER_STUB};
     let raw = json!([component(
         "a",
         vec![issue("a", "A", 1), issue("b", "B", 2)],
@@ -199,15 +213,25 @@ fn same_layer_edges_route_around_the_right_edge() {
     )]);
     let data = parse_components(&raw.to_string()).expect("parse");
     let laid = layout_graph(&data);
-    assert!(laid.nodes.iter().all(|n| n.layer == 0), "fixture is same-layer");
+    assert!(
+        laid.nodes.iter().all(|n| n.layer == 0),
+        "fixture is same-layer"
+    );
 
     let edge = laid.edges.first().expect("one edge");
     let source = laid.nodes.iter().find(|n| n.bead.id == edge.from).unwrap();
     let right = source.x + NODE_W;
     assert_eq!(edge.x1, right, "source attaches at its right edge");
     assert_eq!(edge.x2, right, "target attaches at the same right edge");
-    assert_eq!(edge.elbow_x, right + SAME_LAYER_STUB, "elbow clears the node");
-    assert!(edge.elbow_x > edge.x1 && edge.elbow_x > edge.x2, "no backwards run");
+    assert_eq!(
+        edge.elbow_x,
+        right + SAME_LAYER_STUB,
+        "elbow clears the node"
+    );
+    assert!(
+        edge.elbow_x > edge.x1 && edge.elbow_x > edge.x2,
+        "no backwards run"
+    );
 }
 
 /// Cross-layer edges keep the conventional right-to-left shape.

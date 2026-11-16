@@ -5,7 +5,6 @@
 use serde::Deserialize;
 use std::fmt;
 
-
 /// Stored bd status values.
 pub const STATUS_OPEN: &str = "open";
 pub const STATUS_IN_PROGRESS: &str = "in_progress";
@@ -102,9 +101,7 @@ fn default_priority() -> u8 {
 impl Bead {
     /// Ready-work ranking: priority ascending (P0 first), ID as tiebreak.
     pub fn ready_rank(a: &Bead, b: &Bead) -> std::cmp::Ordering {
-        a.priority
-            .cmp(&b.priority)
-            .then_with(|| a.id.cmp(&b.id))
+        a.priority.cmp(&b.priority).then_with(|| a.id.cmp(&b.id))
     }
 
     /// Reusable comparator instance for sort_by.

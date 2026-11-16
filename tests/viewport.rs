@@ -1,7 +1,7 @@
 //! S1 seam: pan/zoom viewport math, independent of any gpui types.
 //! Semantics mirror the prototype's fitGraph/zoomAt exactly.
 
-use bdui::graph_view::{Viewport, ZOOM_MAX, ZOOM_MIN};
+use bdvw::graph_view::{Viewport, ZOOM_MAX, ZOOM_MIN};
 
 /// Prototype wheel: one notch multiplies zoom by ~this.
 const WHEEL_STEP: f32 = 1.1;
@@ -41,7 +41,10 @@ fn zoom_anchored_at_cursor_keeps_world_point_under_cursor() {
 
 #[test]
 fn zoom_is_clamped() {
-    let mut v = Viewport { zoom: ZOOM_MAX, ..Default::default() };
+    let mut v = Viewport {
+        zoom: ZOOM_MAX,
+        ..Default::default()
+    };
     v.zoom_at((0.0, 0.0), 2.0);
     assert!(close(v.zoom, ZOOM_MAX));
     v.zoom = ZOOM_MIN;

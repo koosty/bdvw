@@ -1,7 +1,7 @@
 //! S1: Ready view tabs and suggested-next (pure logic).
 
-use bdui::model::{derive_state, Bead};
-use bdui::ready::{suggested_next, tab_count, tab_rows, ReadyTab};
+use bdvw::model::{derive_state, Bead};
+use bdvw::ready::{suggested_next, tab_count, tab_rows, ReadyTab};
 use serde_json::json;
 
 fn bead(id: &str, status: &str, priority: u8, updated_at: &str) -> Bead {
@@ -49,7 +49,11 @@ fn tab_count_matches_tab_rows_for_every_tab() {
     ]);
 
     for tab in ReadyTab::ALL {
-        assert_eq!(tab_count(&beads, tab), tab_rows(&beads, tab).len(), "{tab:?}");
+        assert_eq!(
+            tab_count(&beads, tab),
+            tab_rows(&beads, tab).len(),
+            "{tab:?}"
+        );
     }
     assert_eq!(tab_count(&beads, ReadyTab::Closed), 2);
 }

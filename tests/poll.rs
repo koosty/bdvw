@@ -1,9 +1,9 @@
-//! S2: live-sync poll path against real `bd` (bdui-rs-7lr).
+//! S2: live-sync poll path against real `bd` (bdvw-rs-7lr).
 //! The shell loop itself is UI-bound; these exercise the pieces beneath
 //! it: fetching lists repeatedly, observing external mutations, and
 //! serialization of concurrent client invocations.
 
-use bdui::client::{BeadsClient, CliClient};
+use bdvw::client::{BeadsClient, CliClient};
 use std::process::Command;
 
 fn workspace_with_bead() -> (tempfile::TempDir, String) {
@@ -52,7 +52,7 @@ fn poll_observes_external_claim() {
     assert_eq!(after.len(), 1);
     assert_eq!(after[0].status, "in_progress");
     // The diff seam sees it.
-    assert!(bdui::store::beads_differ(&before, &after));
+    assert!(bdvw::store::beads_differ(&before, &after));
 }
 
 #[test]
@@ -95,6 +95,6 @@ fn poll_observes_external_close_as_closed_state() {
 
     let after = client.list().expect("second list");
     assert_eq!(after.len(), 1);
-    assert_eq!(after[0].state, bdui::model::State::Closed);
-    assert!(bdui::store::beads_differ(&before, &after));
+    assert_eq!(after[0].state, bdvw::model::State::Closed);
+    assert!(bdvw::store::beads_differ(&before, &after));
 }

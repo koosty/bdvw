@@ -218,8 +218,7 @@ pub fn tree_rows(
         kept
     }
     let mut keep: HashSet<&str> = HashSet::new();
-    let mut cache: std::collections::HashMap<String, bool> =
-        std::collections::HashMap::new();
+    let mut cache: std::collections::HashMap<String, bool> = std::collections::HashMap::new();
     for b in beads {
         let mut visiting = HashSet::new();
         if keep_fn(
@@ -252,10 +251,7 @@ pub fn tree_rows(
         .iter()
         .filter(|b| {
             keep.contains(b.id.as_str())
-                && (cyclic(&b.id)
-                    || !hierarchy
-                        .parent_of(&b.id)
-                        .is_some_and(|p| keep.contains(p)))
+                && (cyclic(&b.id) || !hierarchy.parent_of(&b.id).is_some_and(|p| keep.contains(p)))
         })
         .collect();
     roots.sort_by(|a, b| Bead::ready_rank(a, b));
@@ -327,15 +323,7 @@ pub fn tree_rows(
     let mut seen = HashSet::new();
     for root in roots {
         walk(
-            &root.id,
-            0,
-            &index,
-            hierarchy,
-            &keep,
-            collapsed,
-            beads,
-            &mut rows,
-            &mut seen,
+            &root.id, 0, &index, hierarchy, &keep, collapsed, beads, &mut rows, &mut seen,
         );
     }
     rows

@@ -7,8 +7,8 @@ use crate::model::Bead;
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, Context, EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _,
-    Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px,
+    div, px, AnyElement, Context, EventEmitter, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
 };
 
 /// Clicking an entry opens the drawer on that bead.
@@ -38,12 +38,7 @@ impl ActivityView {
     }
 
     /// Push a fresh feed: merge events over the current bead titles.
-    pub fn set_feed(
-        &mut self,
-        beads: &[Bead],
-        events: Vec<ActivityEvent>,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn set_feed(&mut self, beads: &[Bead], events: Vec<ActivityEvent>, cx: &mut Context<Self>) {
         self.loaded = true;
         self.error = None;
         self.progress = None;
@@ -93,7 +88,11 @@ impl ActivityView {
         let cur = self
             .selected
             .map(|(d, e)| {
-                self.days[..d].iter().map(|x| x.entries.len()).sum::<usize>() + e
+                self.days[..d]
+                    .iter()
+                    .map(|x| x.entries.len())
+                    .sum::<usize>()
+                    + e
             })
             .unwrap_or(0) as i32;
         let next = (cur + delta).rem_euclid(self.len() as i32) as usize;
@@ -105,7 +104,9 @@ impl ActivityView {
     pub fn activate(&mut self, cx: &mut Context<Self>) {
         if let Some((d, e)) = self.selected {
             if let Some(entry) = self.days.get(d).and_then(|day| day.entries.get(e)) {
-                cx.emit(ActivityViewEvent::EntryClicked(entry.event.issue_id.clone()));
+                cx.emit(ActivityViewEvent::EntryClicked(
+                    entry.event.issue_id.clone(),
+                ));
             }
         }
     }
@@ -157,7 +158,9 @@ impl ActivityView {
                     // accent is a near-background hover tone in the light
                     // theme; the type label needs real contrast.
                     .text_color(crate::app::event_color(&entry.event.kind))
-                    .child(SharedString::from(event_label(&entry.event.kind).to_string())),
+                    .child(SharedString::from(
+                        event_label(&entry.event.kind).to_string(),
+                    )),
             )
             .child(
                 div()
@@ -220,7 +223,9 @@ impl Render for ActivityView {
                     .py_2()
                     .text_xs()
                     .text_color(theme.muted_foreground)
-                    .child(SharedString::from(format!("Fetching history {done}/{total}")))
+                    .child(SharedString::from(format!(
+                        "Fetching history {done}/{total}"
+                    )))
                     .into_any_element(),
             );
         }

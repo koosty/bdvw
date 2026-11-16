@@ -73,11 +73,7 @@ impl Store {
     }
 
     /// Replace the filters; notifies so every view re-renders.
-    pub fn set_filters(
-        &mut self,
-        filters: crate::tree::Filters,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn set_filters(&mut self, filters: crate::tree::Filters, cx: &mut Context<Self>) {
         self.filters = filters;
         cx.notify();
     }
@@ -119,11 +115,7 @@ impl Store {
 
     /// Sync indicator: error, loading, or "live · Ns" since last success.
     pub fn sync_label(&self) -> String {
-        Self::sync_label_from(
-            self.loaded,
-            self.last_error.as_deref(),
-            self.last_success,
-        )
+        Self::sync_label_from(self.loaded, self.last_error.as_deref(), self.last_success)
     }
 
     /// Pure derivation of the sync-indicator label (S1 seam).

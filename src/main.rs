@@ -1,12 +1,12 @@
 //! Entry point: open the Beads Viewer window.
 
-use bdui::app::AppShell;
-use bdui::client::{BeadsClient as _, CliClient};
-use bdui::drawer::{DetailClient, Drawer};
-use bdui::store::Store;
+use bdvw::app::AppShell;
+use bdvw::client::{BeadsClient as _, CliClient};
+use bdvw::drawer::{DetailClient, Drawer};
+use bdvw::store::Store;
+use gpui_kit::component::TitleBar;
 use gpui_kit::AppContext as _;
 use gpui_kit::{WindowDecorations, WindowOptions};
-use gpui_kit::component::TitleBar;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -15,12 +15,12 @@ struct CliShim {
     client: Arc<CliClient>,
 }
 
-impl bdui::app::BeadsClientShim for CliShim {
+impl bdvw::app::BeadsClientShim for CliShim {
     fn refresh(&self, store: &mut Store, cx: &mut gpui_kit::Context<Store>) {
         store.refresh(self.client.as_ref(), cx);
     }
 
-    fn graph(&self) -> Result<bdui::graph::GraphData, String> {
+    fn graph(&self) -> Result<bdvw::graph::GraphData, String> {
         self.client.graph().map_err(|e| e.to_string())
     }
 
@@ -30,21 +30,24 @@ impl bdui::app::BeadsClientShim for CliShim {
 }
 
 impl DetailClient for CliShim {
-    fn detail(&self, id: &str) -> Result<bdui::model::BeadDetail, String> {
-        bdui::client::BeadsClient::detail(self.client.as_ref(), id)
-            .map_err(|e| e.to_string())
+    fn detail(&self, id: &str) -> Result<bdvw::model::BeadDetail, String> {
+        bdvw::client::BeadsClient::detail(self.client.as_ref(), id).map_err(|e| e.to_string())
     }
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    match bdui::startup::parse(&args) {
-        Ok(bdui::startup::Startup::Help) => {
-            println!("{}", bdui::startup::USAGE);
+    match bdvw::startup::parse(&args) {
+        Ok(bdvw::startup::Startup::Help) => {
+            println!("{}", bdvw::startup::USAGE);
             return;
         }
-        Ok(bdui::startup::Startup::Run { dir: Some(dir) }) => {
-            let dir = match bdui::startup::resolve_dir(&dir) {
+        Ok(bdvw::startup::Startup::Version) => {
+            println!("bdvw {}", bdvw::startup::VERSION);
+            return;
+        }
+        Ok(bdvw::startup::Startup::Run { dir: Some(dir) }) => {
+            let dir = match bdvw::startup::resolve_dir(&dir) {
                 Ok(dir) => dir,
                 Err(e) => {
                     eprintln!("{e}");
@@ -58,7 +61,7 @@ fn main() {
                 std::process::exit(2);
             }
         }
-        Ok(bdui::startup::Startup::Run { dir: None }) => {}
+        Ok(bdvw::startup::Startup::Run { dir: None }) => {}
         Err(e) => {
             eprintln!("{e}");
             std::process::exit(2);
@@ -76,13 +79,20 @@ fn main() {
                 },
                 cx,
                 |window, cx| {
-                window.set_window_title("Beads Viewer");
-                let cli = Arc::new(CliClient::new());
-                let client = Rc::new(CliShim { client: cli.clone() });
-                let store = cx.new(|_| Store::new());
-                let drawer = cx.new(|_| Drawer::new(Arc::new(CliShim { client: cli.clone() })));
-                cx.new(|cx| AppShell::new(store, client, drawer, window, cx))
-            })
+                    window.set_window_title("Beads Viewer");
+                    let cli = Arc::new(CliClient::new());
+                    let client = Rc::new(CliShim {
+                        client: cli.clone(),
+                    });
+                    let store = cx.new(|_| Store::new());
+                    let drawer = cx.new(|_| {
+                        Drawer::new(Arc::new(CliShim {
+                            client: cli.clone(),
+                        }))
+                    });
+                    cx.new(|cx| AppShell::new(store, client, drawer, window, cx))
+                },
+            )
             .expect("failed to open window");
         });
 }

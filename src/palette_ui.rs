@@ -8,9 +8,8 @@ use crate::palette::{palette_commands, palette_matches, PaletteCommand, PaletteM
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, Context, InteractiveElement as _, IntoElement, MouseButton,
-    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _,
-    Window, div, px, rgb,
+    div, px, rgb, AnyElement, Context, InteractiveElement as _, IntoElement, MouseButton,
+    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
 };
 
 /// What the palette asks the shell to do when a match is picked.
@@ -114,8 +113,7 @@ impl Palette {
             "down" | "j" => {
                 let len = self.matches.len();
                 if len > 0 {
-                    self.selected =
-                        Some(self.selected.map_or(0, |i| (i + 1).min(len - 1)));
+                    self.selected = Some(self.selected.map_or(0, |i| (i + 1).min(len - 1)));
                     cx.notify();
                 }
                 true
@@ -204,9 +202,12 @@ impl Render for Palette {
             .justify_center()
             .items_start()
             .pt(px(120.))
-            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
-                this.close(window, cx);
-            }))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, window, cx| {
+                    this.close(window, cx);
+                }),
+            )
             .child(
                 div()
                     .id("palette-panel")
@@ -251,7 +252,11 @@ impl Render for Palette {
     }
 }
 
-fn render_match_row(m: &PaletteMatch, selected: bool, theme: &gpui_kit::component::theme::Theme) -> AnyElement {
+fn render_match_row(
+    m: &PaletteMatch,
+    selected: bool,
+    theme: &gpui_kit::component::theme::Theme,
+) -> AnyElement {
     div()
         .id(SharedString::from(format!(
             "palette-row-{}-{}",

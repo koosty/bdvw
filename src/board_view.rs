@@ -3,14 +3,14 @@
 //! Click opens the drawer; j/k move a per-view selection across cards in
 //! reading order (column by column).
 
-use crate::board::{board_columns, BoardColumn, BoardCard};
+use crate::board::{board_columns, BoardCard, BoardColumn};
 use crate::model::State;
 use crate::tree::Filters;
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, Context, EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _,
-    Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px,
+    div, px, AnyElement, Context, EventEmitter, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
 };
 
 /// Clicking a card opens the detail drawer.
@@ -39,7 +39,12 @@ impl BoardView {
     }
 
     /// Push a store snapshot: filtered beads in, columns out.
-    pub fn set_data(&mut self, beads: Vec<crate::model::Bead>, filters: Filters, cx: &mut Context<Self>) {
+    pub fn set_data(
+        &mut self,
+        beads: Vec<crate::model::Bead>,
+        filters: Filters,
+        cx: &mut Context<Self>,
+    ) {
         if beads.is_empty() {
             self.columns = Vec::new();
             self.flat = Vec::new();
@@ -106,9 +111,7 @@ impl BoardView {
             .border_1()
             .border_color(theme.border)
             .bg(theme.secondary)
-            .when(selected, |el| {
-                el.border_color(theme.primary).shadow_md()
-            })
+            .when(selected, |el| el.border_color(theme.primary).shadow_md())
             .hover(|s| s.border_color(theme.accent.opacity(0.5)))
             .on_click(cx.listener(move |_, _, _, cx| {
                 cx.emit(BoardViewEvent::CardClicked(id.clone()));
@@ -150,15 +153,9 @@ impl BoardView {
 
         // Blocked cards name their open blockers (prototype "waiting on").
         if bead.state == State::Blocked && !card.open_blockers.is_empty() {
-            card_el = card_el.child(
-                div()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child(SharedString::from(format!(
-                        "waiting on {}",
-                        card.open_blockers.join(", ")
-                    ))),
-            );
+            card_el = card_el.child(div().text_xs().text_color(theme.muted_foreground).child(
+                SharedString::from(format!("waiting on {}", card.open_blockers.join(", "))),
+            ));
         }
 
         // Footer: labels, unblocks count, assignee.
@@ -168,26 +165,21 @@ impl BoardView {
                 .items_center()
                 .gap_1()
                 .flex_wrap()
-                .children(
-                    bead.labels.iter().take(3).map(|l| {
-                        div()
-                            .text_xs()
-                            .px_1()
-                            .rounded_full()
-                            .bg(theme.background)
-                            .text_color(theme.muted_foreground)
-                            .child(l.clone())
-                    }),
-                )
+                .children(bead.labels.iter().take(3).map(|l| {
+                    div()
+                        .text_xs()
+                        .px_1()
+                        .rounded_full()
+                        .bg(theme.background)
+                        .text_color(theme.muted_foreground)
+                        .child(l.clone())
+                }))
                 .when(card.unblocks > 0, |el| {
                     el.child(
                         div()
                             .text_xs()
                             .text_color(color)
-                            .child(SharedString::from(format!(
-                                "unblocks {}",
-                                card.unblocks
-                            ))),
+                            .child(SharedString::from(format!("unblocks {}", card.unblocks))),
                     )
                 })
                 .child(div().ml_auto().when(bead.assignee.is_some(), |el| {
@@ -241,10 +233,7 @@ impl Render for BoardView {
                         })
                         .collect();
                     div()
-                        .id(SharedString::from(format!(
-                            "board-col-{}",
-                            col.label
-                        )))
+                        .id(SharedString::from(format!("board-col-{}", col.label)))
                         .flex()
                         .flex_col()
                         .gap_2()
@@ -260,12 +249,7 @@ impl Render for BoardView {
                                 .flex()
                                 .items_center()
                                 .gap_2()
-                                .child(
-                                    div()
-                                        .size(px(8.))
-                                        .rounded_full()
-                                        .bg(color),
-                                )
+                                .child(div().size(px(8.)).rounded_full().bg(color))
                                 .child(
                                     div()
                                         .text_sm()
@@ -276,9 +260,7 @@ impl Render for BoardView {
                                     div()
                                         .text_xs()
                                         .text_color(theme.muted_foreground)
-                                        .child(SharedString::from(
-                                            col.cards.len().to_string(),
-                                        )),
+                                        .child(SharedString::from(col.cards.len().to_string())),
                                 ),
                         )
                         .child(

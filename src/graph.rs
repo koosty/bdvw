@@ -106,18 +106,23 @@ pub struct CollapsedGraph {
 ///   Re-anchored `blocks` edges keep blocking the epic (bd's layered model
 ///   treats the epic as the unit of work).
 /// - Collapsed epics get `child_count` = hidden-subtree size.
-pub fn collapse_graph(data: &GraphData, collapsed: &std::collections::HashSet<String>) -> CollapsedGraph {
+pub fn collapse_graph(
+    data: &GraphData,
+    collapsed: &std::collections::HashSet<String>,
+) -> CollapsedGraph {
     // Descendents of each collapsed epic over parent-child edges:
     // dep entry "issue_id child depends_on_id parent" means child has parent.
     let mut children_of: std::collections::HashMap<&str, Vec<&str>> =
         std::collections::HashMap::new();
     for e in &data.edges {
         if e.kind == "parent-child" {
-            children_of.entry(e.from.as_str()).or_default().push(e.to.as_str());
+            children_of
+                .entry(e.from.as_str())
+                .or_default()
+                .push(e.to.as_str());
         }
     }
-    let in_graph =
-        |id: &str| data.nodes.iter().any(|n| n.id == id);
+    let in_graph = |id: &str| data.nodes.iter().any(|n| n.id == id);
 
     // Hidden = descendant closure of collapsed epics.
     let mut hidden: std::collections::HashSet<&str> = std::collections::HashSet::new();
@@ -146,8 +151,7 @@ pub fn collapse_graph(data: &GraphData, collapsed: &std::collections::HashSet<St
         let mut current = id;
         loop {
             let parent = data.edges.iter().find_map(|e| {
-                (e.kind == "parent-child" && e.to == current)
-                    .then_some(e.from.as_str())
+                (e.kind == "parent-child" && e.to == current).then_some(e.from.as_str())
             });
             match parent {
                 Some(p) if hidden.contains(p) => current = p,
@@ -163,29 +167,28 @@ pub fn collapse_graph(data: &GraphData, collapsed: &std::collections::HashSet<St
         .filter(|n| !hidden.contains(n.id.as_str()))
         .map(|bead| CollapsedNode {
             bead: bead.clone(),
-            child_count: (bead.issue_type == "epic" && collapsed.contains(&bead.id))
-                .then(|| {
-                    // Count hidden descendants rooted here.
-                    let mut count = 0usize;
-                    let mut stack = children_of
-                        .get(bead.id.as_str())
-                        .map(|v| v.as_slice())
-                        .unwrap_or(&[])
-                        .to_vec();
-                    let mut seen = std::collections::HashSet::new();
-                    while let Some(id) = stack.pop() {
-                        if !in_graph(id) || !seen.insert(id) {
-                            continue;
-                        }
-                        if root_of(id) == Some(bead.id.as_str()) {
-                            count += 1;
-                        }
-                        if let Some(kids) = children_of.get(id) {
-                            stack.extend(kids.iter().copied());
-                        }
+            child_count: (bead.issue_type == "epic" && collapsed.contains(&bead.id)).then(|| {
+                // Count hidden descendants rooted here.
+                let mut count = 0usize;
+                let mut stack = children_of
+                    .get(bead.id.as_str())
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[])
+                    .to_vec();
+                let mut seen = std::collections::HashSet::new();
+                while let Some(id) = stack.pop() {
+                    if !in_graph(id) || !seen.insert(id) {
+                        continue;
                     }
-                    count
-                }),
+                    if root_of(id) == Some(bead.id.as_str()) {
+                        count += 1;
+                    }
+                    if let Some(kids) = children_of.get(id) {
+                        stack.extend(kids.iter().copied());
+                    }
+                }
+                count
+            }),
         })
         .collect();
 
@@ -206,7 +209,11 @@ pub fn collapse_graph(data: &GraphData, collapsed: &std::collections::HashSet<St
             if from == to {
                 return None; // internal to the collapsed subtree
             }
-            Some(DepEdge { from, to, kind: e.kind.clone() })
+            Some(DepEdge {
+                from,
+                to,
+                kind: e.kind.clone(),
+            })
         })
         .collect();
 
@@ -318,10 +325,7 @@ pub fn layout_graph(data: &GraphData) -> Graph {
     let mut columns: std::collections::BTreeMap<usize, Vec<&Bead>> =
         std::collections::BTreeMap::new();
     for n in &data.nodes {
-        columns
-            .entry(layer_of[n.id.as_str()])
-            .or_default()
-            .push(n);
+        columns.entry(layer_of[n.id.as_str()]).or_default().push(n);
     }
     for col in columns.values_mut() {
         col.sort_by(|a, b| a.ready_rank_cmp(b));
@@ -350,8 +354,7 @@ pub fn layout_graph(data: &GraphData) -> Graph {
     // path would run backwards through the target's own column.
     let mut edges = Vec::new();
     for e in &data.edges {
-        let (Some(&(fx, fy)), Some(&(tx, ty))) =
-            (position_of.get(&e.from), position_of.get(&e.to))
+        let (Some(&(fx, fy)), Some(&(tx, ty))) = (position_of.get(&e.from), position_of.get(&e.to))
         else {
             continue; // edge to a node outside the snapshot
         };

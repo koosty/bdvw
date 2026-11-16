@@ -1,9 +1,7 @@
-//! S1: activity feed merge/group/order (bdui-rs-2u6).
+//! S1: activity feed merge/group/order (bdvw-rs-2u6).
 
-use bdui::activity::{
-    activity_feed, day_of, event_label, parse_events, time_of, ActivityEvent,
-};
-use bdui::model::Bead;
+use bdvw::activity::{activity_feed, day_of, event_label, parse_events, time_of, ActivityEvent};
+use bdvw::model::Bead;
 use serde_json::json;
 
 fn event(id: &str, issue: &str, kind: &str, actor: &str, at: &str) -> ActivityEvent {
@@ -78,7 +76,10 @@ fn feed_dedupes_by_event_id() {
 #[test]
 fn feed_keeps_unknown_issues() {
     // An event for a bead no longer in the list still shows.
-    let days = activity_feed(&[], vec![event("e1", "gone", "closed", "k", "2026-11-16T08:00:00Z")]);
+    let days = activity_feed(
+        &[],
+        vec![event("e1", "gone", "closed", "k", "2026-11-16T08:00:00Z")],
+    );
     assert_eq!(days.len(), 1);
     assert!(days[0].entries[0].title.is_none());
 }
@@ -116,26 +117,48 @@ fn stamped(id: &str, updated_at: &str) -> Bead {
 
 #[test]
 fn cache_refetches_only_new_or_changed_beads() {
-    use bdui::activity::HistoryCache;
+    use bdvw::activity::HistoryCache;
     let mut cache = HistoryCache::default();
     let beads = vec![stamped("a", "t1"), stamped("b", "t1")];
-    assert_eq!(cache.stale(&beads).len(), 2, "cold cache fetches everything");
+    assert_eq!(
+        cache.stale(&beads).len(),
+        2,
+        "cold cache fetches everything"
+    );
 
-    cache.insert("a".into(), "t1".into(), vec![event("e1", "a", "created", "k", "t1")]);
+    cache.insert(
+        "a".into(),
+        "t1".into(),
+        vec![event("e1", "a", "created", "k", "t1")],
+    );
     cache.insert("b".into(), "t1".into(), vec![]);
-    assert!(cache.stale(&beads).is_empty(), "unchanged stamps are memo hits");
+    assert!(
+        cache.stale(&beads).is_empty(),
+        "unchanged stamps are memo hits"
+    );
 
     // Bead b moved on; a is untouched.
     let moved = vec![stamped("a", "t1"), stamped("b", "t2")];
-    assert_eq!(cache.stale(&moved), vec![("b".to_string(), "t2".to_string())]);
+    assert_eq!(
+        cache.stale(&moved),
+        vec![("b".to_string(), "t2".to_string())]
+    );
 }
 
 #[test]
 fn cache_prunes_departed_beads() {
-    use bdui::activity::HistoryCache;
+    use bdvw::activity::HistoryCache;
     let mut cache = HistoryCache::default();
-    cache.insert("a".into(), "t1".into(), vec![event("e1", "a", "created", "k", "t1")]);
-    cache.insert("gone".into(), "t1".into(), vec![event("e2", "gone", "created", "k", "t1")]);
+    cache.insert(
+        "a".into(),
+        "t1".into(),
+        vec![event("e1", "a", "created", "k", "t1")],
+    );
+    cache.insert(
+        "gone".into(),
+        "t1".into(),
+        vec![event("e2", "gone", "created", "k", "t1")],
+    );
     cache.prune(&[stamped("a", "t1")]);
     let events = cache.events();
     assert_eq!(events.len(), 1);
@@ -145,7 +168,7 @@ fn cache_prunes_departed_beads() {
 // S2: history transport against the real `bd` CLI.
 #[test]
 fn history_events_from_real_bd() {
-    use bdui::client::{BeadsClient, CliClient};
+    use bdvw::client::{BeadsClient, CliClient};
     use std::process::Command;
 
     let dir = tempfile::tempdir().expect("tempdir");
@@ -191,7 +214,11 @@ fn history_events_from_real_bd() {
     let days = activity_feed(&beads, events);
     assert_eq!(days.len(), 1);
     assert_eq!(days[0].entries.len(), 2);
-    let kinds: Vec<&str> = days[0].entries.iter().map(|e| e.event.kind.as_str()).collect();
+    let kinds: Vec<&str> = days[0]
+        .entries
+        .iter()
+        .map(|e| e.event.kind.as_str())
+        .collect();
     assert!(kinds.contains(&"created"));
     assert!(kinds.contains(&"claimed"));
 }

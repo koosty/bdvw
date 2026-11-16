@@ -8,8 +8,8 @@ use crate::tree::{tree_rows, Filters, Hierarchy, TreeRow};
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    AnyElement, Context, EventEmitter, InteractiveElement as _, IntoElement, ParentElement as _,
-    Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px,
+    div, px, AnyElement, Context, EventEmitter, InteractiveElement as _, IntoElement,
+    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
 };
 use std::collections::HashSet;
 
@@ -46,12 +46,7 @@ impl TreeView {
     }
 
     /// Push a store snapshot: recompute hierarchy + rows.
-    pub fn set_data(
-        &mut self,
-        beads: Vec<Bead>,
-        filters: Filters,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn set_data(&mut self, beads: Vec<Bead>, filters: Filters, cx: &mut Context<Self>) {
         if beads.is_empty() {
             self.beads = beads;
             self.rows = Vec::new();
@@ -70,15 +65,9 @@ impl TreeView {
     fn recompute(&mut self) {
         // Keep caret collapse stable across refreshes; drop ids that no
         // longer exist so the set cannot grow stale.
-        let live: HashSet<String> =
-            self.beads.iter().map(|b| b.id.clone()).collect();
+        let live: HashSet<String> = self.beads.iter().map(|b| b.id.clone()).collect();
         self.collapsed.retain(|id| live.contains(id));
-        self.rows = tree_rows(
-            &self.beads,
-            &self.hierarchy,
-            &self.collapsed,
-            &self.filters,
-        );
+        self.rows = tree_rows(&self.beads, &self.hierarchy, &self.collapsed, &self.filters);
         if let Some(sel) = self.selected {
             if sel >= self.rows.len() {
                 self.selected = self.rows.len().checked_sub(1);
@@ -135,12 +124,7 @@ impl TreeView {
         }
     }
 
-    fn render_row(
-        &self,
-        row: &TreeRow,
-        selected: bool,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
+    fn render_row(&self, row: &TreeRow, selected: bool, cx: &mut Context<Self>) -> AnyElement {
         let theme = cx.theme().clone();
         let bead = &row.bead;
         let color = crate::app::state_color(&bead.state);
@@ -198,9 +182,7 @@ impl TreeView {
                                 }),
                             )
                     })
-                    .child(SharedString::from(
-                        caret.unwrap_or("\u{00B7}").to_string(),
-                    )),
+                    .child(SharedString::from(caret.unwrap_or("\u{00B7}").to_string())),
             )
             .child(div().size(px(9.)).rounded_full().bg(color))
             .child(
@@ -246,9 +228,7 @@ impl TreeView {
                                 div()
                                     .w(px(54. * frac))
                                     .h(px(4.))
-                                    .bg(crate::app::state_color(
-                                        &crate::model::State::Closed,
-                                    )),
+                                    .bg(crate::app::state_color(&crate::model::State::Closed)),
                             ),
                     )
                     .child(
@@ -289,9 +269,7 @@ impl Render for TreeView {
                 .rows
                 .iter()
                 .enumerate()
-                .map(|(i, row)| {
-                    self.render_row(row, Some(i) == selected, cx)
-                })
+                .map(|(i, row)| self.render_row(row, Some(i) == selected, cx))
                 .collect();
             div()
                 .id("tree-list")

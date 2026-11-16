@@ -1,8 +1,8 @@
-//! S1: DetailSlot load state (bdui-rs-A2). The drawer's async loads are
+//! S1: DetailSlot load state (bdvw-rs-A2). The drawer's async loads are
 //! applied through this pure slot, so token rules are tested here.
 
-use bdui::drawer::DetailSlot;
-use bdui::model::{parse_detail, BeadDetail};
+use bdvw::drawer::DetailSlot;
+use bdvw::model::{parse_detail, BeadDetail};
 
 fn detail(id: &str) -> BeadDetail {
     parse_detail(&format!(
@@ -40,7 +40,10 @@ fn superseded_result_is_discarded() {
     let mut slot = DetailSlot::default();
     let s_a = slot.begin("a");
     let _s_b = slot.begin("b");
-    assert!(!slot.apply(s_a, Ok(detail("a"))), "a's load finished after b was chosen");
+    assert!(
+        !slot.apply(s_a, Ok(detail("a"))),
+        "a's load finished after b was chosen"
+    );
     assert_eq!(slot.selected(), Some("b"));
     assert!(slot.detail().is_none());
 }

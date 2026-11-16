@@ -10,8 +10,8 @@ use crate::graph::{
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    Bounds, Context, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render,
-    StatefulInteractiveElement as _, Styled as _, Window, div, px,
+    div, px, Bounds, Context, InteractiveElement as _, IntoElement, ParentElement as _, Pixels,
+    Render, StatefulInteractiveElement as _, Styled as _, Window,
 };
 
 /// Zoom clamp, matching the prototype's zoomAt (0.15..=2.5).
@@ -31,7 +31,11 @@ pub struct Viewport {
 
 impl Default for Viewport {
     fn default() -> Self {
-        Self { pan_x: 0.0, pan_y: 0.0, zoom: 1.0 }
+        Self {
+            pan_x: 0.0,
+            pan_y: 0.0,
+            zoom: 1.0,
+        }
     }
 }
 
@@ -172,7 +176,10 @@ impl Render for GraphView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
         let Some(graph) = &self.graph else {
-            let msg = self.error.clone().unwrap_or_else(|| "Loading graph…".into());
+            let msg = self
+                .error
+                .clone()
+                .unwrap_or_else(|| "Loading graph…".into());
             return div()
                 .flex()
                 .flex_1()
@@ -233,7 +240,12 @@ impl Render for GraphView {
                 if !fitted.get() {
                     fitted.set(true);
                     let (bw, bh) = fit_params;
-                    let fit = Viewport::fit(bw, bh, bounds.size.width.as_f32(), bounds.size.height.as_f32());
+                    let fit = Viewport::fit(
+                        bw,
+                        bh,
+                        bounds.size.width.as_f32(),
+                        bounds.size.height.as_f32(),
+                    );
                     entity.update(cx, |this, cx| {
                         this.viewport = fit;
                         this.fitted = true;
@@ -259,10 +271,7 @@ impl Render for GraphView {
             move |bounds: Bounds<Pixels>, (): (), window: &mut Window, _cx: &mut gpui_kit::App| {
                 // Canvas paint coordinates are window-space; node divs are
                 // laid out relative to their wrapper, so add the origin.
-                let (ox, oy) = (
-                    f32::from(bounds.origin.x),
-                    f32::from(bounds.origin.y),
-                );
+                let (ox, oy) = (f32::from(bounds.origin.x), f32::from(bounds.origin.y));
                 for e in &edges {
                     let incident = hovered_edge
                         .as_deref()
@@ -271,13 +280,11 @@ impl Render for GraphView {
                         // Focus: incident edges take the accent and stay
                         // opaque; everything else fades to 0.07.
                         (Some(_), true) => edge_accent,
-                        (Some(_), false) => {
-                            match e.style {
-                                EdgeStyle::Solid => edge_fg,
-                                _ => edge_muted,
-                            }
-                            .opacity(0.13)
+                        (Some(_), false) => match e.style {
+                            EdgeStyle::Solid => edge_fg,
+                            _ => edge_muted,
                         }
+                        .opacity(0.13),
                         (None, _) => match e.style {
                             EdgeStyle::Solid => edge_fg,
                             _ => edge_muted,
@@ -310,7 +317,11 @@ impl Render for GraphView {
                     // edges arrive from the right, so the head flips.
                     let head = 7.0 * vp.zoom;
                     let tip = gpui_kit::Point::new(px(x2), px(y2));
-                    let back = if x2 < x1 { px(x2 - head) } else { px(x2 + head) };
+                    let back = if x2 < x1 {
+                        px(x2 - head)
+                    } else {
+                        px(x2 + head)
+                    };
                     let up = gpui_kit::Point::new(back, px(y2 - head / 2.0));
                     let down = gpui_kit::Point::new(back, px(y2 + head / 2.0));
                     let mut head_path = gpui_kit::PathBuilder::fill();
@@ -359,133 +370,117 @@ impl Render for GraphView {
             })
             .collect::<Vec<_>>();
 
-        let node_rows = graph
-            .nodes
-            .iter()
-            .map(|n| {
-                let bead = &n.bead;
-                let color = state_color(&bead.state);
-                let border = if bead.issue_type == "epic" {
-                    color.opacity(0.9)
-                } else {
-                    theme2.border
-                };
-                let is_selected = selected.as_deref() == Some(bead.id.as_str());
-                let in_focus = hovered.is_none()
-                    || focus_set.contains(bead.id.as_str());
-                let child_count = self.child_counts.get(&bead.id).copied();
-                let title = bead.title.clone();
-                let id = bead.id.clone();
-                let badge_id = id.clone();
-                let hover_id = id.clone();
-                let chevron_id = id.clone();
-                let is_epic = bead.issue_type == "epic";
-                let sx = vp.pan_x + n.x * vp.zoom;
-                let sy = vp.pan_y + n.y * vp.zoom;
-                div()
-                    .id(gpui_kit::SharedString::from(format!("graph-node-{id}")))
-                    .absolute()
-                    .left(px(sx))
-                    .top(px(sy))
-                    .w(px(NODE_W * vp.zoom))
-                    .h(px(NODE_H * vp.zoom))
-                    .rounded_md()
-                    // Focus dims non-neighbors (prototype: .22 opacity).
-                    .opacity(if in_focus { 1.0 } else { 0.22 })
-                    .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                        this.hovered = hovered.then(|| hover_id.clone());
-                        cx.notify();
-                    }))
-                    .border_1()
-                    .border_color(if is_selected {
-                        theme2.accent
+        let node_rows =
+            graph
+                .nodes
+                .iter()
+                .map(|n| {
+                    let bead = &n.bead;
+                    let color = state_color(&bead.state);
+                    let border = if bead.issue_type == "epic" {
+                        color.opacity(0.9)
                     } else {
-                        border
-                    })
-                    .when(is_selected, |el| el.border_2())
-                    // Epics keep the card outline tint; regular tasks fill.
-                    .bg(if bead.issue_type == "epic" {
-                        theme2.background
-                    } else {
-                        theme2.secondary
-                    })
-                    .when(bead.issue_type == "epic", |el| {
-                        el.border_l_2().border_color(color)
-                    })
-                    .when(is_selected, |el| {
-                        el.shadow_md().border_color(theme2.accent)
-                    })
-                    .px_2()
-                    .flex()
-                    .flex_col()
-                    .justify_center()
-                    .overflow_hidden()
-                    .on_mouse_down(
-                        gpui_kit::MouseButton::Left,
-                        cx.listener(move |this, event: &gpui_kit::MouseDownEvent, _, cx| {
-                            // Press selects immediately; whether it counts
-                            // as a click (opens the drawer) is decided on
-                            // release by the press-move distance.
-                            this.selected = Some(badge_id.clone());
-                            this.pending_click = Some(badge_id.clone());
-                            this.press_origin = (
-                                event.position.x.as_f32(),
-                                event.position.y.as_f32(),
-                            );
+                        theme2.border
+                    };
+                    let is_selected = selected.as_deref() == Some(bead.id.as_str());
+                    let in_focus = hovered.is_none() || focus_set.contains(bead.id.as_str());
+                    let child_count = self.child_counts.get(&bead.id).copied();
+                    let title = bead.title.clone();
+                    let id = bead.id.clone();
+                    let badge_id = id.clone();
+                    let hover_id = id.clone();
+                    let chevron_id = id.clone();
+                    let is_epic = bead.issue_type == "epic";
+                    let sx = vp.pan_x + n.x * vp.zoom;
+                    let sy = vp.pan_y + n.y * vp.zoom;
+                    div()
+                        .id(gpui_kit::SharedString::from(format!("graph-node-{id}")))
+                        .absolute()
+                        .left(px(sx))
+                        .top(px(sy))
+                        .w(px(NODE_W * vp.zoom))
+                        .h(px(NODE_H * vp.zoom))
+                        .rounded_md()
+                        // Focus dims non-neighbors (prototype: .22 opacity).
+                        .opacity(if in_focus { 1.0 } else { 0.22 })
+                        .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                            this.hovered = hovered.then(|| hover_id.clone());
                             cx.notify();
-                        }),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(color)
-                            .child(gpui_kit::SharedString::from(format!(
-                                "{} · P{}",
-                                id, bead.priority
-                            ))),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_ellipsis()
-                            .child(gpui_kit::SharedString::from(title)),
-                    )
-                    .when(is_epic, |el| {
-                        // Chevron + hidden-child count; click toggles
-                        // collapse. Sits in the node's top-right corner.
-                        el.child(
-                            div()
-                                .id(gpui_kit::SharedString::from(format!(
-                                    "graph-collapse-{chevron_id}"
-                                )))
-                                .absolute()
-                                .right_1()
-                                .top_1()
-                                .px_1()
-                                .rounded_sm()
-                                .text_xs()
-                                .text_color(theme2.accent)
-                                .on_mouse_down(
-                                    gpui_kit::MouseButton::Left,
-                                    cx.listener(move |this, _, _, cx| {
-                                        // The node press also fired; the
-                                        // click would open the drawer, so
-                                        // cancel it — this press toggles.
-                                        this.pending_click = None;
-                                        this.toggle_collapse(&chevron_id, cx);
-                                    }),
-                                )
-                                .child(gpui_kit::SharedString::from(format!(
-                                    "{}{}",
-                                    if child_count.is_some() { "▾" } else { "▸" },
-                                    child_count
-                                        .map(|c| format!(" {c}"))
-                                        .unwrap_or_default()
-                                ))),
+                        }))
+                        .border_1()
+                        .border_color(if is_selected { theme2.accent } else { border })
+                        .when(is_selected, |el| el.border_2())
+                        // Epics keep the card outline tint; regular tasks fill.
+                        .bg(if bead.issue_type == "epic" {
+                            theme2.background
+                        } else {
+                            theme2.secondary
+                        })
+                        .when(bead.issue_type == "epic", |el| {
+                            el.border_l_2().border_color(color)
+                        })
+                        .when(is_selected, |el| el.shadow_md().border_color(theme2.accent))
+                        .px_2()
+                        .flex()
+                        .flex_col()
+                        .justify_center()
+                        .overflow_hidden()
+                        .on_mouse_down(
+                            gpui_kit::MouseButton::Left,
+                            cx.listener(move |this, event: &gpui_kit::MouseDownEvent, _, cx| {
+                                // Press selects immediately; whether it counts
+                                // as a click (opens the drawer) is decided on
+                                // release by the press-move distance.
+                                this.selected = Some(badge_id.clone());
+                                this.pending_click = Some(badge_id.clone());
+                                this.press_origin =
+                                    (event.position.x.as_f32(), event.position.y.as_f32());
+                                cx.notify();
+                            }),
                         )
-                    })
-            })
-            .collect::<Vec<_>>();
+                        .child(div().text_xs().text_color(color).child(
+                            gpui_kit::SharedString::from(format!("{} · P{}", id, bead.priority)),
+                        ))
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_ellipsis()
+                                .child(gpui_kit::SharedString::from(title)),
+                        )
+                        .when(is_epic, |el| {
+                            // Chevron + hidden-child count; click toggles
+                            // collapse. Sits in the node's top-right corner.
+                            el.child(
+                                div()
+                                    .id(gpui_kit::SharedString::from(format!(
+                                        "graph-collapse-{chevron_id}"
+                                    )))
+                                    .absolute()
+                                    .right_1()
+                                    .top_1()
+                                    .px_1()
+                                    .rounded_sm()
+                                    .text_xs()
+                                    .text_color(theme2.accent)
+                                    .on_mouse_down(
+                                        gpui_kit::MouseButton::Left,
+                                        cx.listener(move |this, _, _, cx| {
+                                            // The node press also fired; the
+                                            // click would open the drawer, so
+                                            // cancel it — this press toggles.
+                                            this.pending_click = None;
+                                            this.toggle_collapse(&chevron_id, cx);
+                                        }),
+                                    )
+                                    .child(gpui_kit::SharedString::from(format!(
+                                        "{}{}",
+                                        if child_count.is_some() { "▾" } else { "▸" },
+                                        child_count.map(|c| format!(" {c}")).unwrap_or_default()
+                                    ))),
+                            )
+                        })
+                })
+                .collect::<Vec<_>>();
 
         div()
             .id("graph-viewport")
@@ -496,44 +491,41 @@ impl Render for GraphView {
             .min_h_0()
             .relative()
             .overflow_hidden()
-            .on_scroll(cx.listener(|this, event: &gpui_kit::ScrollEvent, _window, cx| {
-                let position = (event.position.x.as_f32(), event.position.y.as_f32());
-                // Wheel zooms, matching the prototype's wheel handler.
-                let factor = match &event.delta {
-                    gpui_kit::ScrollDelta::Lines(d) => (-d.y * 0.1).exp(),
-                    gpui_kit::ScrollDelta::Pixels(d) => (-d.y.as_f32() * 0.0015).exp(),
-                };
-                this.viewport.zoom_at(position, factor);
-                cx.notify();
-            }))
+            .on_scroll(
+                cx.listener(|this, event: &gpui_kit::ScrollEvent, _window, cx| {
+                    let position = (event.position.x.as_f32(), event.position.y.as_f32());
+                    // Wheel zooms, matching the prototype's wheel handler.
+                    let factor = match &event.delta {
+                        gpui_kit::ScrollDelta::Lines(d) => (-d.y * 0.1).exp(),
+                        gpui_kit::ScrollDelta::Pixels(d) => (-d.y.as_f32() * 0.0015).exp(),
+                    };
+                    this.viewport.zoom_at(position, factor);
+                    cx.notify();
+                }),
+            )
             .on_mouse_down(
                 gpui_kit::MouseButton::Left,
                 cx.listener(|this, event: &gpui_kit::MouseDownEvent, _, cx| {
                     // Begin a pan drag; the move handler pans until release.
-                    this.drag_last =
-                        Some((event.position.x.as_f32(), event.position.y.as_f32()));
+                    this.drag_last = Some((event.position.x.as_f32(), event.position.y.as_f32()));
                     if this.pending_click.is_none() {
-                        this.press_origin = (
-                            event.position.x.as_f32(),
-                            event.position.y.as_f32(),
-                        );
+                        this.press_origin = (event.position.x.as_f32(), event.position.y.as_f32());
                     }
                     cx.notify();
                 }),
             )
-            .on_mouse_move(cx.listener(
-                |this, event: &gpui_kit::MouseMoveEvent, _, cx| {
-                if event.pressed_button == Some(gpui_kit::MouseButton::Left) {
-                    if let Some((lx, ly)) = this.drag_last {
-                        let (mx, my) =
-                            (event.position.x.as_f32(), event.position.y.as_f32());
-                        this.viewport.pan(mx - lx, my - ly);
-                        this.drag_last = Some((mx, my));
-                        cx.notify();
+            .on_mouse_move(
+                cx.listener(|this, event: &gpui_kit::MouseMoveEvent, _, cx| {
+                    if event.pressed_button == Some(gpui_kit::MouseButton::Left) {
+                        if let Some((lx, ly)) = this.drag_last {
+                            let (mx, my) = (event.position.x.as_f32(), event.position.y.as_f32());
+                            this.viewport.pan(mx - lx, my - ly);
+                            this.drag_last = Some((mx, my));
+                            cx.notify();
+                        }
                     }
-                }
-                },
-            ))
+                }),
+            )
             .on_mouse_up(
                 gpui_kit::MouseButton::Left,
                 cx.listener(|this, _, _, cx| {

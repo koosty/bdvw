@@ -5,12 +5,12 @@
 use crate::app::{priority_color, state_color};
 use crate::model::{Bead, BeadDetail, Comment, DepLink, State};
 use crate::stamp;
-use gpui_kit::AppContext as _;
-use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::component::theme::Theme;
+use gpui_kit::component::ActiveTheme as _;
+use gpui_kit::AppContext as _;
 use gpui_kit::{
-    ClipboardItem, Context, InteractiveElement as _, IntoElement, ParentElement as _, Render,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px,
+    div, px, ClipboardItem, Context, InteractiveElement as _, IntoElement, ParentElement as _,
+    Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
 };
 use std::sync::Arc;
 
@@ -93,7 +93,10 @@ pub struct Drawer {
 
 impl Drawer {
     pub fn new(client: Arc<dyn DetailClient>) -> Self {
-        Self { slot: DetailSlot::default(), client }
+        Self {
+            slot: DetailSlot::default(),
+            client,
+        }
     }
 
     /// Re-fetch the detail for the currently selected bead (poll path).
@@ -125,9 +128,7 @@ impl Drawer {
     fn load(&self, id: String, seq: u64, cx: &mut Context<Drawer>) {
         let client = self.client.clone();
         cx.spawn(async move |drawer, cx| {
-            let result = cx
-                .background_spawn(async move { client.detail(&id) })
-                .await;
+            let result = cx.background_spawn(async move { client.detail(&id) }).await;
             let _ = drawer.update(cx, |drawer, cx| {
                 if drawer.slot.apply(seq, result) {
                     cx.notify();
@@ -137,7 +138,6 @@ impl Drawer {
         .detach();
     }
 }
-
 
 impl Render for Drawer {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Drawer>) -> impl IntoElement {
@@ -212,15 +212,28 @@ impl Drawer {
     }
 }
 
-fn render_detail<O, C>(detail: &BeadDetail, theme: &Theme, open: O, close: C) -> gpui_kit::AnyElement
+fn render_detail<O, C>(
+    detail: &BeadDetail,
+    theme: &Theme,
+    open: O,
+    close: C,
+) -> gpui_kit::AnyElement
 where
     O: Fn(&str, &mut Window, &mut gpui_kit::App) + Clone + 'static,
     C: Fn(&mut Window, &mut gpui_kit::App) + 'static,
 {
     let bead = &detail.bead;
     let now = stamp::now_epoch();
-    let blocked_by: Vec<&DepLink> = detail.dependencies.iter().filter(|l| is_blocking(l)).collect();
-    let blocks: Vec<&DepLink> = detail.dependents.iter().filter(|l| is_blocking(l)).collect();
+    let blocked_by: Vec<&DepLink> = detail
+        .dependencies
+        .iter()
+        .filter(|l| is_blocking(l))
+        .collect();
+    let blocks: Vec<&DepLink> = detail
+        .dependents
+        .iter()
+        .filter(|l| is_blocking(l))
+        .collect();
     let related: Vec<&DepLink> = detail
         .dependencies
         .iter()
@@ -249,18 +262,42 @@ where
                 .child(bead.title.clone()),
         )
         .child(chips(bead, theme))
-        .children(section("Description", text_block(detail.description.as_deref(), theme), theme))
-        .children(section("Blocked by", render_links(blocked_by, theme, &open), theme))
+        .children(section(
+            "Description",
+            text_block(detail.description.as_deref(), theme),
+            theme,
+        ))
+        .children(section(
+            "Blocked by",
+            render_links(blocked_by, theme, &open),
+            theme,
+        ))
         .children(section("Blocks", render_links(blocks, theme, &open), theme))
-        .children(section("Related", render_links(related, theme, &open), theme))
-        .children(section("Design", text_block(detail.design.as_deref(), theme), theme))
+        .children(section(
+            "Related",
+            render_links(related, theme, &open),
+            theme,
+        ))
+        .children(section(
+            "Design",
+            text_block(detail.design.as_deref(), theme),
+            theme,
+        ))
         .children(section(
             "Acceptance criteria",
             text_block(detail.acceptance_criteria.as_deref(), theme),
             theme,
         ))
-        .children(section("Notes", text_block(detail.notes.as_deref(), theme), theme))
-        .children(section("Comments", render_comments(&detail.comments, theme), theme))
+        .children(section(
+            "Notes",
+            text_block(detail.notes.as_deref(), theme),
+            theme,
+        ))
+        .children(section(
+            "Comments",
+            render_comments(&detail.comments, theme),
+            theme,
+        ))
         .children(section("Details", Some(details(bead, theme, now)), theme))
         .children(section("Commands", Some(commands(&bead.id, theme)), theme))
         .into_any_element()
@@ -328,7 +365,10 @@ fn copy_action(id: String, label: &str, value: String, color: gpui_kit::Hsla) ->
 
 fn chips(bead: &Bead, theme: &Theme) -> impl IntoElement {
     let priority = priority_color(bead.priority);
-    let who = bead.assignee.clone().unwrap_or_else(|| "unassigned".to_string());
+    let who = bead
+        .assignee
+        .clone()
+        .unwrap_or_else(|| "unassigned".to_string());
     div()
         .flex()
         .flex_wrap()
@@ -353,7 +393,12 @@ fn chips(bead: &Bead, theme: &Theme) -> impl IntoElement {
                 .child(bead.issue_type.to_uppercase()),
         )
         .child(pill(who, theme))
-        .children(bead.labels.iter().map(|l| pill(l.clone(), theme)).collect::<Vec<_>>())
+        .children(
+            bead.labels
+                .iter()
+                .map(|l| pill(l.clone(), theme))
+                .collect::<Vec<_>>(),
+        )
 }
 
 fn pill(text: String, theme: &Theme) -> impl IntoElement {
@@ -383,11 +428,7 @@ fn state_pill(state: &State) -> impl IntoElement {
 }
 
 /// A section renders only when it has content.
-fn section(
-    title: &str,
-    body: Option<impl IntoElement>,
-    theme: &Theme,
-) -> Option<impl IntoElement> {
+fn section(title: &str, body: Option<impl IntoElement>, theme: &Theme) -> Option<impl IntoElement> {
     let body = body?;
     Some(
         div()
@@ -451,7 +492,13 @@ where
                         .text_color(theme.muted_foreground)
                         .child(l.id.clone()),
                 )
-                .child(div().text_sm().flex_1().overflow_x_hidden().child(l.title.clone()))
+                .child(
+                    div()
+                        .text_sm()
+                        .flex_1()
+                        .overflow_x_hidden()
+                        .child(l.title.clone()),
+                )
         })
         .collect::<Vec<_>>();
     Some(div().flex().flex_col().gap_2().children(rows))
@@ -470,16 +517,9 @@ fn render_comments(comments: &[Comment], theme: &Theme) -> Option<impl IntoEleme
                 .pl_3()
                 .flex()
                 .flex_col()
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.muted_foreground)
-                        .child(SharedString::from(format!(
-                            "{} · {}",
-                            c.author,
-                            c.created_at
-                        ))),
-                )
+                .child(div().text_xs().text_color(theme.muted_foreground).child(
+                    SharedString::from(format!("{} · {}", c.author, c.created_at)),
+                ))
                 .child(div().text_sm().child(c.text.clone()))
         })
         .collect::<Vec<_>>();

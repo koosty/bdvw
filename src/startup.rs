@@ -11,7 +11,11 @@ Usage:
 Options:
   --dir <path>   Beads workspace directory (default: current directory)
   -h, --help     Show this help
+  -V, --version  Show version
 ";
+
+/// Package version, from the manifest at build time.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// What the process should do after reading its arguments.
 #[derive(Debug, PartialEq, Eq)]
@@ -20,6 +24,8 @@ pub enum Startup {
     Run { dir: Option<PathBuf> },
     /// Print usage and exit successfully.
     Help,
+    /// Print the version and exit successfully.
+    Version,
 }
 
 /// Parse arguments (without the program name). Unknown or incomplete
@@ -30,6 +36,7 @@ pub fn parse(args: &[String]) -> Result<Startup, String> {
     while let Some(arg) = rest.next() {
         match arg.as_str() {
             "-h" | "--help" => return Ok(Startup::Help),
+            "-V" | "--version" => return Ok(Startup::Version),
             "--dir" => {
                 let value = rest
                     .next()

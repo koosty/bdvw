@@ -1,6 +1,6 @@
-//! S1: drawer timestamp formatting over fixed stamps (bdui-rs drawer rework).
+//! S1: drawer timestamp formatting over fixed stamps (bdvw-rs drawer rework).
 
-use bdui::stamp::{absolute, ago, epoch_secs};
+use bdvw::stamp::{absolute, ago, epoch_secs};
 
 #[test]
 fn epoch_anchor_points() {
@@ -25,14 +25,29 @@ fn absolute_renders_utc_and_passes_garbage_through() {
 #[test]
 fn ago_buckets_by_largest_unit() {
     let created = epoch_secs("2026-11-15T09:22:25Z").unwrap();
-    assert_eq!(ago("2026-11-15T09:22:25Z", created + 30), Some("just now".into()));
-    assert_eq!(ago("2026-11-15T09:22:25Z", created + 12 * 60), Some("12m ago".into()));
-    assert_eq!(ago("2026-11-15T09:22:25Z", created + 5 * 3_600), Some("5h ago".into()));
-    assert_eq!(ago("2026-11-15T09:22:25Z", created + 86_400), Some("1d ago".into()));
+    assert_eq!(
+        ago("2026-11-15T09:22:25Z", created + 30),
+        Some("just now".into())
+    );
+    assert_eq!(
+        ago("2026-11-15T09:22:25Z", created + 12 * 60),
+        Some("12m ago".into())
+    );
+    assert_eq!(
+        ago("2026-11-15T09:22:25Z", created + 5 * 3_600),
+        Some("5h ago".into())
+    );
+    assert_eq!(
+        ago("2026-11-15T09:22:25Z", created + 86_400),
+        Some("1d ago".into())
+    );
 }
 
 #[test]
 fn ago_clamps_future_stamps_to_just_now() {
     let created = epoch_secs("2026-11-15T09:22:25Z").unwrap();
-    assert_eq!(ago("2026-11-15T09:22:25Z", created - 3_600), Some("just now".into()));
+    assert_eq!(
+        ago("2026-11-15T09:22:25Z", created - 3_600),
+        Some("just now".into())
+    );
 }

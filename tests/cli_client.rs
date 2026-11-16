@@ -1,8 +1,8 @@
 //! Seam S2: CliClient against the real `bd` CLI in a throwaway workspace.
 //! Verifies the transport end to end: spawn, JSON parse, ready semantics.
 
-use bdui::client::{BeadsClient, CliClient};
-use bdui::model::State;
+use bdvw::client::{BeadsClient, CliClient};
+use bdvw::model::State;
 use std::process::Command;
 
 /// Create a temp workspace with a two-bead dependency chain:

@@ -1,10 +1,8 @@
-use bdui::model::Bead;
-use bdui::palette::{
-    fuzzy_match, palette_commands, palette_matches, PaletteCommand, ViewKind,
-};
+use bdvw::model::Bead;
+use bdvw::palette::{fuzzy_match, palette_commands, palette_matches, PaletteCommand, ViewKind};
 use serde_json::json;
 
-fn bead(id: &str, title: &str) -> bdui::model::Bead {
+fn bead(id: &str, title: &str) -> bdvw::model::Bead {
     serde_json::from_value(json!({
         "id": id,
         "title": title,
@@ -55,9 +53,10 @@ fn g_prefix_matches_all_views_sorted() {
 fn query_matches_ids_and_view_commands_together() {
     let cmds = palette_commands();
     let hits = palette_matches("graph", &cmds, &beads());
-    assert!(hits
-        .iter()
-        .any(|m| m.label().contains("Graph")), "view command present");
+    assert!(
+        hits.iter().any(|m| m.label().contains("Graph")),
+        "view command present"
+    );
 }
 
 #[test]

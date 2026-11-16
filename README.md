@@ -21,10 +21,18 @@ A desktop UI for supervising [bd (beads)](https://github.com/gastownhall/beads) 
 ## Requirements
 
 - Linux with Wayland (X11 untested)
-- Rust 1.85+ (gpui-kit uses edition 2024; developed on 1.100)
-- `bd` on `PATH` — the viewer shells out to it, never opens the database
+- Rust 1.92+ (gpui-kit and its dependencies require edition 2024; developed on 1.100, verified on 1.95)
+- `bd` 1.3+ on `PATH` — the viewer shells out to it, never opens the database
 
-## Build and run
+## Install
+
+From crates.io:
+
+```bash
+cargo install bdvw
+```
+
+From source:
 
 ```bash
 git clone https://github.com/koosty/bdvw.git
@@ -36,7 +44,7 @@ cargo build --release
 Point it at a workspace other than the current directory:
 
 ```bash
-./target/release/bdvw --dir /path/to/project
+bdvw --dir /path/to/project
 ```
 
 `--dir` canonicalizes the path, rejects non-directories, and exits 2 on bad arguments. `bdvw --help` prints usage.
@@ -51,14 +59,16 @@ Point it at a workspace other than the current directory:
 | `Enter` | Open selected bead in the drawer |
 | `Esc` | Close the drawer |
 
-Keys route to the active view. Plain keys are ignored while a text input has focus.
+Keys route to the active view. Plain keys are ignored while a text input has focus. The palette also jumps to any bead by ID or title, and toggles the theme.
 
 ## Status
 
-Pre-1.0. All five views render and live sync works. Known issues:
+`0.1.0-alpha.1` — first public alpha. Read-only: the viewer never writes to your bead database. See [CHANGELOG.md](CHANGELOG.md) for the full scope and known limitations.
+
+Known issues:
 
 - **Memory and Messages views** — `g m` shows a placeholder; the slice isn't built.
-- **In-app writes** — claim/close are copyable commands, not buttons. The viewer never writes to your bead database.
+- **In-app writes** — claim/close are copyable commands, not buttons.
 - **Workspace switching** — requires a restart with `--dir`.
 
 Screenshots come from a synthetic demo workspace:

@@ -2,7 +2,7 @@
 //! `bd show <id> --json --long --include-comments --include-dependents`.
 //! Expected values hand-labeled from the captured workspace.
 
-use bdui::model::{parse_detail, DepLink};
+use bdvw::model::{parse_detail, DepLink};
 
 /// Fixture: the "Beta blocked task" record captured from a real workspace.
 /// It depends on Alpha (blocks), has no comments.

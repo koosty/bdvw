@@ -1,12 +1,11 @@
 #![cfg(test)]
 //! S1: statuses outside the five mapped ones keep their identity
-//! (bdui-rs drawer/board status handling). bd built-ins `pinned` and
+//! (bdvw-rs drawer/board status handling). bd built-ins `pinned` and
 //! `hooked`, plus `bd config status.custom` values, must not read as Ready.
 
-use bdui::board::{board_columns, state_label};
-use bdui::model::{parse_summary, Bead, State};
-use bdui::ready::{tab_count, tab_rows, ReadyTab};
-
+use bdvw::board::{board_columns, state_label};
+use bdvw::model::{parse_summary, Bead, State};
+use bdvw::ready::{tab_count, tab_rows, ReadyTab};
 
 fn fixture() -> &'static str {
     r#"[
@@ -71,11 +70,23 @@ fn board_gives_each_custom_status_its_own_column() {
     // hidden by default filters, so it is absent here.
     assert_eq!(
         labels,
-        ["Ready", "In progress", "Blocked", "Deferred", "pinned", "hooked", "triage"]
+        [
+            "Ready",
+            "In progress",
+            "Blocked",
+            "Deferred",
+            "pinned",
+            "hooked",
+            "triage"
+        ]
     );
     let ready = cols.iter().find(|c| c.state == State::Ready).unwrap();
     assert_eq!(
-        ready.cards.iter().map(|c| c.bead.id.as_str()).collect::<Vec<_>>(),
+        ready
+            .cards
+            .iter()
+            .map(|c| c.bead.id.as_str())
+            .collect::<Vec<_>>(),
         ["bd-s1"],
         "custom beads must not land in the Ready column"
     );
@@ -86,11 +97,23 @@ fn board_gives_each_custom_status_its_own_column() {
 
 #[test]
 fn closed_column_trails_custom_columns_when_shown() {
-    let filters = bdui::tree::Filters { show_closed: true, ..Default::default() };
+    let filters = bdvw::tree::Filters {
+        show_closed: true,
+        ..Default::default()
+    };
     let cols = board_columns(&beads(), &filters);
     let labels: Vec<String> = cols.iter().map(|c| c.label.clone()).collect();
     assert_eq!(
         labels,
-        ["Ready", "In progress", "Blocked", "Deferred", "pinned", "hooked", "triage", "Closed"]
+        [
+            "Ready",
+            "In progress",
+            "Blocked",
+            "Deferred",
+            "pinned",
+            "hooked",
+            "triage",
+            "Closed"
+        ]
     );
 }

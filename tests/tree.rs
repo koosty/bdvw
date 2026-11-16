@@ -1,8 +1,8 @@
 //! S1: tree hierarchy derivation, filters, and row assembly
-//! (bdui-rs-8db).
+//! (bdvw-rs-8db).
 
-use bdui::model::Bead;
-use bdui::tree::{tree_rows, Filters, Hierarchy};
+use bdvw::model::Bead;
+use bdvw::tree::{tree_rows, Filters, Hierarchy};
 use serde_json::json;
 use std::collections::HashSet;
 
@@ -22,7 +22,7 @@ fn bead(id: &str, title: &str, status: &str, priority: u8) -> Bead {
 
 /// Parent edge via the list row's inline dependencies array.
 fn child_of(mut b: Bead, parent: &str) -> Bead {
-    b.raw_deps = vec![bdui::graph::RawDep {
+    b.raw_deps = vec![bdvw::graph::RawDep {
         issue_id: b.id.clone(),
         depends_on_id: parent.to_string(),
         kind: "parent-child".to_string(),
@@ -31,7 +31,7 @@ fn child_of(mut b: Bead, parent: &str) -> Bead {
 }
 
 fn derive(mut beads: Vec<Bead>) -> Vec<Bead> {
-    bdui::model::derive_state(&mut beads);
+    bdvw::model::derive_state(&mut beads);
     beads
 }
 
@@ -66,8 +66,11 @@ fn hierarchy_id_suffix_fallback() {
 
 #[test]
 fn numeric_child_sort() {
-    let mut kids: Vec<String> = ["a.10", "a.2", "a.1"].iter().map(|s| s.to_string()).collect();
-    kids.sort_by(|a, b| bdui::tree::cmp_numeric_ids(a, b));
+    let mut kids: Vec<String> = ["a.10", "a.2", "a.1"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    kids.sort_by(|a, b| bdvw::tree::cmp_numeric_ids(a, b));
     assert_eq!(kids, vec!["a.1", "a.2", "a.10"]);
 }
 
@@ -80,7 +83,10 @@ fn rows_show_caret_and_progress() {
         child_of(bead("c3", "C3", "closed", 2), "epic"),
     ]);
     let h = Hierarchy::from_beads(&beads);
-    let f = Filters { show_closed: true, ..Filters::default() };
+    let f = Filters {
+        show_closed: true,
+        ..Filters::default()
+    };
     let rows = tree_rows(&beads, &h, &HashSet::new(), &f);
     assert_eq!(rows.len(), 4, "root + 3 children");
     assert_eq!(rows[0].bead.id, "epic");
@@ -118,7 +124,10 @@ fn filter_keeps_ancestors_of_matches() {
         child_of(bead("c2", "Has infra", "open", 2), "epic"),
     ]);
     let h = Hierarchy::from_beads(&beads);
-    let filters = Filters { query: "infra".into(), ..Filters::default() };
+    let filters = Filters {
+        query: "infra".into(),
+        ..Filters::default()
+    };
     let rows = tree_rows(&beads, &h, &HashSet::new(), &filters);
     let ids: Vec<&str> = rows.iter().map(|r| r.bead.id.as_str()).collect();
     // c2 matches; its parent epic is kept as context; c1 is pruned.
@@ -154,7 +163,10 @@ fn closed_hidden_by_default() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].bead.id, "b");
 
-    let f = Filters { show_closed: true, ..Filters::default() };
+    let f = Filters {
+        show_closed: true,
+        ..Filters::default()
+    };
     let rows = tree_rows(&beads, &h, &HashSet::new(), &f);
     assert_eq!(rows.len(), 2);
 }
@@ -187,13 +199,13 @@ fn assignee_and_priority_filters() {
 fn cycle_does_not_hang() {
     // Corrupt data: two beads claim each other as parents.
     let mut a = bead("a", "A", "open", 2);
-    a.raw_deps = vec![bdui::graph::RawDep {
+    a.raw_deps = vec![bdvw::graph::RawDep {
         issue_id: "a".into(),
         depends_on_id: "b".into(),
         kind: "parent-child".into(),
     }];
     let mut b = bead("b", "B", "open", 2);
-    b.raw_deps = vec![bdui::graph::RawDep {
+    b.raw_deps = vec![bdvw::graph::RawDep {
         issue_id: "b".into(),
         depends_on_id: "a".into(),
         kind: "parent-child".into(),
@@ -208,7 +220,7 @@ fn cycle_does_not_hang() {
 // S2: hierarchy from the real `bd` CLI with parent-child links.
 #[test]
 fn hierarchy_from_real_bd_parent_child() {
-    use bdui::client::BeadsClient;
+    use bdvw::client::BeadsClient;
     use std::process::Command;
 
     let dir = tempfile::tempdir().expect("tempdir");
@@ -237,7 +249,7 @@ fn hierarchy_from_real_bd_parent_child() {
         .to_string();
     run(&["link", &task, &epic, "--type", "parent-child"]);
 
-    let client = bdui::client::CliClient::in_dir(dir.path());
+    let client = bdvw::client::CliClient::in_dir(dir.path());
     let beads = client.list().expect("list");
     assert_eq!(beads.len(), 2);
     let h = Hierarchy::from_beads(&beads);

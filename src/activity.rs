@@ -80,12 +80,7 @@ pub struct ActivityDay {
 /// Ties keep the incoming order: bd lists a bead's events in no guaranteed
 /// order, so same-second ties carry no sequence signal.
 pub fn activity_feed(beads: &[Bead], events: Vec<ActivityEvent>) -> Vec<ActivityDay> {
-    let title = |id: &str| {
-        beads
-            .iter()
-            .find(|b| b.id == id)
-            .map(|b| b.title.clone())
-    };
+    let title = |id: &str| beads.iter().find(|b| b.id == id).map(|b| b.title.clone());
 
     let mut seen = std::collections::HashSet::new();
     let mut merged: Vec<ActivityEntry> = events

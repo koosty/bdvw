@@ -1,8 +1,8 @@
-//! S1: board column assembly (bdui-rs-nx8).
+//! S1: board column assembly (bdvw-rs-nx8).
 
-use bdui::board::{board_columns, derive_cards, state_label};
-use bdui::model::{Bead, State};
-use bdui::tree::Filters;
+use bdvw::board::{board_columns, derive_cards, state_label};
+use bdvw::model::{Bead, State};
+use bdvw::tree::Filters;
 use serde_json::json;
 
 fn bead(id: &str, title: &str, status: &str, priority: u8) -> Bead {
@@ -17,7 +17,7 @@ fn bead(id: &str, title: &str, status: &str, priority: u8) -> Bead {
 }
 
 fn blocked_by(mut b: Bead, blocker: &str) -> Bead {
-    b.raw_deps.push(bdui::graph::RawDep {
+    b.raw_deps.push(bdvw::graph::RawDep {
         issue_id: b.id.clone(),
         depends_on_id: blocker.to_string(),
         kind: "blocks".into(),
@@ -26,7 +26,7 @@ fn blocked_by(mut b: Bead, blocker: &str) -> Bead {
 }
 
 fn child_of(mut b: Bead, parent: &str) -> Bead {
-    b.raw_deps.push(bdui::graph::RawDep {
+    b.raw_deps.push(bdvw::graph::RawDep {
         issue_id: b.id.clone(),
         depends_on_id: parent.to_string(),
         kind: "parent-child".into(),
@@ -35,7 +35,7 @@ fn child_of(mut b: Bead, parent: &str) -> Bead {
 }
 
 fn derive(mut beads: Vec<Bead>) -> Vec<Bead> {
-    bdui::model::derive_state(&mut beads);
+    bdvw::model::derive_state(&mut beads);
     beads
 }
 
@@ -87,7 +87,10 @@ fn columns_by_state_with_labels() {
         bead("d", "Deferred", "deferred", 2),
         bead("c", "Done", "closed", 2),
     ]);
-    let f = Filters { show_closed: true, ..Filters::default() };
+    let f = Filters {
+        show_closed: true,
+        ..Filters::default()
+    };
     let cols = board_columns(&beads, &f);
     let labels: Vec<String> = cols.iter().map(|c| c.label.clone()).collect();
     assert_eq!(
@@ -102,7 +105,10 @@ fn columns_by_state_with_labels() {
 #[test]
 fn deferred_and_closed_columns_appear_conditionally() {
     let beads = derive(vec![bead("r", "Ready", "open", 2)]);
-    let f = Filters { show_closed: true, ..Filters::default() };
+    let f = Filters {
+        show_closed: true,
+        ..Filters::default()
+    };
     let cols = board_columns(&beads, &f);
     assert_eq!(cols.len(), 3, "base columns only");
 
@@ -140,8 +146,7 @@ fn order_priority_then_unblocks() {
         bead("p0", "P0 card", "open", 0),
     ]);
     let cols = board_columns(&beads, &Filters::default());
-    let ids: Vec<&str> =
-        cols[0].cards.iter().map(|c| c.bead.id.as_str()).collect();
+    let ids: Vec<&str> = cols[0].cards.iter().map(|c| c.bead.id.as_str()).collect();
     // P0 first; then a (unblocks 2) before x/y (unblocks 0).
     assert_eq!(ids, vec!["p0", "a", "x", "y"]);
 }
@@ -155,7 +160,10 @@ fn closed_column_capped_and_recent_first() {
         beads.push(b);
     }
     let beads = derive(beads);
-    let f = Filters { show_closed: true, ..Filters::default() };
+    let f = Filters {
+        show_closed: true,
+        ..Filters::default()
+    };
     let cols = board_columns(&beads, &f);
     let closed = cols.iter().find(|c| c.state == State::Closed).unwrap();
     assert_eq!(closed.cards.len(), 30, "prototype caps closed at 30");
