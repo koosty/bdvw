@@ -259,6 +259,8 @@ pub const NODE_W: f32 = 220.0;
 pub const NODE_H: f32 = 46.0;
 pub const COL_GAP: f32 = 90.0;
 pub const ROW_GAP: f32 = 14.0;
+/// How far past a node's right edge a same-layer edge loops out.
+pub const SAME_LAYER_STUB: f32 = 34.0;
 
 /// Deterministic layered layout.
 ///
@@ -342,7 +344,10 @@ pub fn layout_graph(data: &GraphData) -> Graph {
         }
     }
 
-    // Edge endpoints: source right-center, target left-center.
+    // Edge endpoints. Cross-layer: source right-center to target
+    // left-center. Same-layer: both endpoints sit on the RIGHT edge and
+    // the elbow pushes past it, because a source-right to target-left
+    // path would run backwards through the target's own column.
     let mut edges = Vec::new();
     for e in &data.edges {
         let (Some(&(fx, fy)), Some(&(tx, ty))) =
@@ -350,15 +355,25 @@ pub fn layout_graph(data: &GraphData) -> Graph {
         else {
             continue; // edge to a node outside the snapshot
         };
+        let from_layer = layer_of[e.from.as_str()];
+        let to_layer = layer_of[e.to.as_str()];
+        let same_layer = from_layer == to_layer;
+        let (x1, x2, elbow_x) = if same_layer {
+            let right = fx + NODE_W;
+            (right, right, right + SAME_LAYER_STUB)
+        } else {
+            (fx + NODE_W, tx, (fx + NODE_W + tx) / 2.0)
+        };
         edges.push(LaidEdge {
             from: e.from.clone(),
             to: e.to.clone(),
             kind: e.kind.clone(),
             style: EdgeStyle::from_kind(&e.kind),
-            x1: fx + NODE_W,
+            x1,
             y1: fy + NODE_H / 2.0,
-            x2: tx,
+            x2,
             y2: ty + NODE_H / 2.0,
+            elbow_x,
         });
     }
 
@@ -383,6 +398,10 @@ pub struct LaidEdge {
     pub y1: f32,
     pub x2: f32,
     pub y2: f32,
+    /// X coordinate of the vertical elbow between the endpoints. For
+    /// same-layer edges this sits past the source's right edge so the
+    /// connector loops around instead of collapsing into a vertical line.
+    pub elbow_x: f32,
 }
 
 #[cfg(test)]

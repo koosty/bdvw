@@ -256,7 +256,13 @@ impl Render for GraphView {
         let edge_accent = theme.accent;
         let edge_canvas = gpui_kit::canvas(
             |_bounds: Bounds<Pixels>, _window: &mut Window, _cx: &mut gpui_kit::App| {},
-            move |_bounds: Bounds<Pixels>, (): (), window: &mut Window, _cx: &mut gpui_kit::App| {
+            move |bounds: Bounds<Pixels>, (): (), window: &mut Window, _cx: &mut gpui_kit::App| {
+                // Canvas paint coordinates are window-space; node divs are
+                // laid out relative to their wrapper, so add the origin.
+                let (ox, oy) = (
+                    f32::from(bounds.origin.x),
+                    f32::from(bounds.origin.y),
+                );
                 for e in &edges {
                     let incident = hovered_edge
                         .as_deref()
@@ -278,8 +284,14 @@ impl Render for GraphView {
                         },
                     };
                     // World -> screen.
-                    let (x1, y1) = (vp.pan_x + e.x1 * vp.zoom, vp.pan_y + e.y1 * vp.zoom);
-                    let (x2, y2) = (vp.pan_x + e.x2 * vp.zoom, vp.pan_y + e.y2 * vp.zoom);
+                    let (x1, y1) = (
+                        ox + vp.pan_x + e.x1 * vp.zoom,
+                        oy + vp.pan_y + e.y1 * vp.zoom,
+                    );
+                    let (x2, y2) = (
+                        ox + vp.pan_x + e.x2 * vp.zoom,
+                        oy + vp.pan_y + e.y2 * vp.zoom,
+                    );
                     let mut path = gpui_kit::PathBuilder::stroke(px(1.5));
                     path = match e.style {
                         EdgeStyle::Solid => path,
@@ -287,17 +299,18 @@ impl Render for GraphView {
                         EdgeStyle::Dashed => path.dash_array(&[px(5.0), px(4.0)]),
                     };
                     path.move_to(gpui_kit::Point::new(px(x1), px(y1)));
-                    let mid_x = px((x1 + x2) / 2.0);
+                    let mid_x = px(ox + vp.pan_x + e.elbow_x * vp.zoom);
                     path.line_to(gpui_kit::Point::new(mid_x, px(y1)));
                     path.line_to(gpui_kit::Point::new(mid_x, px(y2)));
                     path.line_to(gpui_kit::Point::new(px(x2), px(y2)));
                     if let Ok(path) = path.build() {
                         window.paint_path(path, color);
                     }
-                    // Arrowhead at the target, scaled with zoom.
+                    // Arrowhead at the target, scaled with zoom. Same-layer
+                    // edges arrive from the right, so the head flips.
                     let head = 7.0 * vp.zoom;
                     let tip = gpui_kit::Point::new(px(x2), px(y2));
-                    let back = px(x2 - head);
+                    let back = if x2 < x1 { px(x2 - head) } else { px(x2 + head) };
                     let up = gpui_kit::Point::new(back, px(y2 - head / 2.0));
                     let down = gpui_kit::Point::new(back, px(y2 + head / 2.0));
                     let mut head_path = gpui_kit::PathBuilder::fill();

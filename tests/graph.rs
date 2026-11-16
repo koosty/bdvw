@@ -184,3 +184,43 @@ fn null_dependencies_parse_as_empty() {
     let laid = layout_graph(&data);
     assert_eq!(laid.nodes.len(), 1);
 }
+
+/// Same-layer edges must loop past the node's right edge. Using the
+/// target's left edge as the endpoint made the source-right and
+/// target-left coordinates identical, collapsing the path into a
+/// zero-width vertical line drawn through the column.
+#[test]
+fn same_layer_edges_route_around_the_right_edge() {
+    use bdui::graph::{NODE_W, SAME_LAYER_STUB};
+    let raw = json!([component(
+        "a",
+        vec![issue("a", "A", 1), issue("b", "B", 2)],
+        vec![dep("a", "b", "parent-child")]
+    )]);
+    let data = parse_components(&raw.to_string()).expect("parse");
+    let laid = layout_graph(&data);
+    assert!(laid.nodes.iter().all(|n| n.layer == 0), "fixture is same-layer");
+
+    let edge = laid.edges.first().expect("one edge");
+    let source = laid.nodes.iter().find(|n| n.bead.id == edge.from).unwrap();
+    let right = source.x + NODE_W;
+    assert_eq!(edge.x1, right, "source attaches at its right edge");
+    assert_eq!(edge.x2, right, "target attaches at the same right edge");
+    assert_eq!(edge.elbow_x, right + SAME_LAYER_STUB, "elbow clears the node");
+    assert!(edge.elbow_x > edge.x1 && edge.elbow_x > edge.x2, "no backwards run");
+}
+
+/// Cross-layer edges keep the conventional right-to-left shape.
+#[test]
+fn cross_layer_edges_span_columns() {
+    let raw = json!([component(
+        "c",
+        vec![issue("a", "A", 1), issue("c", "C", 2)],
+        vec![dep("c", "a", "blocks")]
+    )]);
+    let data = parse_components(&raw.to_string()).expect("parse");
+    let laid = layout_graph(&data);
+    let edge = laid.edges.first().expect("one edge");
+    assert!(edge.x2 > edge.x1, "target column sits to the right");
+    assert_eq!(edge.elbow_x, (edge.x1 + edge.x2) / 2.0);
+}

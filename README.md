@@ -16,7 +16,7 @@ A desktop UI for supervising [bd (beads)](https://github.com/gastownhall/beads) 
 - **Activity** — event timeline across all beads, grouped by day, color-coded by event kind.
 - **Detail drawer** — full record, blocked-by/blocks/related links, copy-to-clipboard commands.
 - **Live sync** — polls `bd` every 2 s; drawer and graph refresh only on change.
-- **Graph** — layered DAG with pan/zoom/fit, epic collapse, hover focus. See known issues below.
+- **Graph** — layered DAG with pan/zoom/fit, epic collapse, hover focus.
 
 ## Requirements
 
@@ -55,15 +55,15 @@ Keys route to the active view. Plain keys are ignored while a text input has foc
 
 ## Status
 
-Pre-1.0. Ready, Tree, Board, Activity, and the detail drawer render and live sync works. Known issues:
+Pre-1.0. All five views render and live sync works. Known issues:
 
-- **Graph edge routing** — edges paint, but their elbows don't reliably meet node cards. Layout and fit work; the connector geometry needs work.
 - **Memory and Messages views** — `g m` shows a placeholder; the slice isn't built.
 - **In-app writes** — claim/close are copyable commands, not buttons. The viewer never writes to your bead database.
 - **Workspace switching** — requires a restart with `--dir`.
 
 Screenshots come from a synthetic demo workspace:
 
+![Graph view](docs/screenshots/graph.png)
 ![Tree view](docs/screenshots/tree.png)
 ![Activity view](docs/screenshots/activity.png)
 ![Detail drawer](docs/screenshots/drawer.png)
