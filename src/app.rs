@@ -817,7 +817,7 @@ impl AppShell {
                     .text_xs()
                     .when(filters.priority == Some(p), |el| {
                         el.bg(theme.accent.opacity(0.12))
-                            .text_color(theme.accent)
+                            .text_color(theme.foreground)
                     })
                     .hover(|s| s.bg(theme.accent.opacity(0.06)))
                     .on_click(cx.listener(move |_, _, _, cx| {
@@ -1109,7 +1109,7 @@ impl AppShell {
             .text_xs()
             .when(current, |el| {
                 el.bg(theme.accent.opacity(0.12))
-                    .text_color(theme.accent)
+                    .text_color(theme.foreground)
             })
             .hover(|s| s.bg(theme.accent.opacity(0.06)))
             .on_click(cx.listener(move |_, _, _, cx| {
