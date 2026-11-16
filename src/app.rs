@@ -46,6 +46,8 @@ pub struct AppShell {
     graph_view: Entity<crate::graph_view::GraphView>,
     /// Tree view; refed from the store on every change (bdui-rs-8db).
     tree_view: Entity<crate::tree_view::TreeView>,
+    /// Board view; same feed as the tree (bdui-rs-nx8).
+    board_view: Entity<crate::board_view::BoardView>,
     /// Search input state for the shared filter surface.
     search_input: gpui_kit::Entity<gpui_kit::component::input::InputState>,
     drawer: Entity<crate::drawer::Drawer>,
@@ -90,6 +92,14 @@ impl AppShell {
             drawer.update(cx, |drawer, cx| drawer.open(id, cx));
         })
         .detach();
+        let board_view = cx.new(|_| crate::board_view::BoardView::new());
+        // Board card clicks open the detail drawer.
+        cx.subscribe(&board_view, |shell, _, event, cx| {
+            let crate::board_view::BoardViewEvent::CardClicked(id) = event;
+            let drawer = shell.drawer.clone();
+            drawer.update(cx, |drawer, cx| drawer.open(id, cx));
+        })
+        .detach();
         // Graph node clicks open the detail drawer.
         cx.subscribe(&graph_view, |shell, _, event, cx| {
             if let crate::graph_view::GraphViewEvent::NodeClicked(id) = event {
@@ -114,13 +124,15 @@ impl AppShell {
             let beads = store.read(cx).ready().to_vec();
             let palette = shell.palette.clone();
             palette.update(cx, |palette, cx| palette.set_beads(beads, cx));
-            // The tree always tracks the store, not just when visible:
-            // filters and data stay live across view jumps.
+            // The tree and board always track the store, not just when
+            // visible: filters and data stay live across view jumps.
             {
                 let all = store.read(cx).beads().to_vec();
                 let filters = store.read(cx).filters().clone();
                 let tree_view = shell.tree_view.clone();
-                tree_view.update(cx, |tv, cx| tv.set_data(all, filters, cx));
+                tree_view.update(cx, |tv, cx| tv.set_data(all.clone(), filters.clone(), cx));
+                let board_view = shell.board_view.clone();
+                board_view.update(cx, |bv, cx| bv.set_data(all, filters, cx));
             }
             if let crate::palette::ViewKind::Graph = shell.active_view {
                 let graph_view = shell.graph_view.clone();
@@ -206,6 +218,7 @@ impl AppShell {
             store,
             graph_view,
             tree_view,
+            board_view,
             search_input,
             drawer,
             palette,
@@ -300,6 +313,18 @@ impl AppShell {
                         });
                     }
                 }
+                _ => {}
+            }
+            return;
+        }
+
+        // Board view owns j/k/Enter over its cards (bdui-rs-nx8).
+        if self.active_view == crate::palette::ViewKind::Board {
+            let board = self.board_view.clone();
+            match key {
+                "j" => board.update(cx, |bv, cx| bv.move_selection(1, cx)),
+                "k" => board.update(cx, |bv, cx| bv.move_selection(-1, cx)),
+                "enter" => board.update(cx, |bv, cx| bv.activate(cx)),
                 _ => {}
             }
             return;
@@ -463,6 +488,7 @@ impl AppShell {
                 .into_any_element(),
             crate::palette::ViewKind::Graph => self.graph_view.clone().into_any_element(),
             crate::palette::ViewKind::Tree => self.tree_view.clone().into_any_element(),
+            crate::palette::ViewKind::Board => self.board_view.clone().into_any_element(),
             view => {
                 let theme = cx.theme().clone();
                 div()

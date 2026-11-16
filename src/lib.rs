@@ -1,4 +1,6 @@
 pub mod app;
+pub mod board;
+pub mod board_view;
 pub mod client;
 pub mod drawer;
 pub mod model;
