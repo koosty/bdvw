@@ -37,6 +37,34 @@ impl DetailClient for CliShim {
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match bdui::startup::parse(&args) {
+        Ok(bdui::startup::Startup::Help) => {
+            println!("{}", bdui::startup::USAGE);
+            return;
+        }
+        Ok(bdui::startup::Startup::Run { dir: Some(dir) }) => {
+            let dir = match bdui::startup::resolve_dir(&dir) {
+                Ok(dir) => dir,
+                Err(e) => {
+                    eprintln!("{e}");
+                    std::process::exit(2);
+                }
+            };
+            // bd, the client, and the sidebar's workspace label all read the
+            // process directory, so point it at the requested workspace.
+            if let Err(e) = std::env::set_current_dir(&dir) {
+                eprintln!("--dir {}: {e}", dir.display());
+                std::process::exit(2);
+            }
+        }
+        Ok(bdui::startup::Startup::Run { dir: None }) => {}
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(2);
+        }
+    }
+
     gpui_kit::application()
         .with_assets(gpui_kit::assets::Assets)
         .run(|cx| {

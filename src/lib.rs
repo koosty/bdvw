@@ -15,3 +15,4 @@ pub mod tree_view;
 pub mod palette_ui;
 pub mod ready;
 pub mod stamp;
+pub mod startup;
