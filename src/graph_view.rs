@@ -344,7 +344,7 @@ impl Render for GraphView {
             .iter()
             .map(|n| {
                 let bead = &n.bead;
-                let color = state_color(bead.state);
+                let color = state_color(&bead.state);
                 let border = if bead.issue_type == "epic" {
                     color.opacity(0.9)
                 } else {

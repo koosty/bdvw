@@ -21,22 +21,24 @@ use gpui_kit::{
 
 /// Colors keyed to derived state (CONTEXT.md: State), not priority.
 /// Dark-mode-first palette from the prototype's tokens.
-pub fn state_color(state: State) -> gpui_kit::Hsla {
+pub fn state_color(state: &State) -> gpui_kit::Hsla {
     match state {
         State::Ready => rgb(0x3ccf7e).into(),   // --ready (dark)
         State::InProgress => rgb(0x6aa0ff).into(), // --progress
         State::Blocked => rgb(0xff6b5e).into(),  // --blocked
         State::Deferred => rgb(0xb794f4).into(), // --deferred
         State::Closed => rgb(0x6b7486).into(),   // --closed
+        // Unmapped status: neutral, so it never reads as ready work.
+        State::Custom(_) => rgb(0x9aa4b2).into(),
     }
 }
 
 /// Issue-type label color: bugs, epics, features get state hues; others stay muted.
 pub fn type_color(issue_type: &str, muted: gpui_kit::Hsla) -> gpui_kit::Hsla {
     match issue_type {
-        "bug" => state_color(State::Blocked),
-        "epic" => state_color(State::Deferred),
-        "feature" => state_color(State::InProgress),
+        "bug" => state_color(&State::Blocked),
+        "epic" => state_color(&State::Deferred),
+        "feature" => state_color(&State::InProgress),
         _ => muted,
     }
 }
@@ -673,7 +675,7 @@ impl AppShell {
             let store = self.store.read(cx);
             (
                 if store.is_synced() {
-                    state_color(State::Ready)
+                    state_color(&State::Ready)
                 } else {
                     theme.muted_foreground
                 },
@@ -996,7 +998,7 @@ impl AppShell {
                 .text_color(if on { theme.foreground } else { theme.muted_foreground })
                 .hover(|s| s.bg(theme.accent.opacity(0.06)))
                 .on_click(cx.listener(move |this, _, _, cx| this.select_ready_tab(tab, cx)))
-                .child(div().size(px(7.)).rounded_full().bg(state_color(tab.state())))
+                .child(div().size(px(7.)).rounded_full().bg(state_color(&tab.state())))
                 .child(tab.label())
                 .child(
                     div()
@@ -1010,7 +1012,7 @@ impl AppShell {
         // in ready-rank order.
         let suggested = if self.ready_tab == crate::ready::ReadyTab::Ready {
             crate::ready::suggested_next(ready).map(|bead| {
-                let accent = state_color(State::Ready);
+                let accent = state_color(&State::Ready);
                 let claim = format!("bd update {} --claim", bead.id);
                 div()
                     .id("suggested-next")
@@ -1143,7 +1145,7 @@ impl AppShell {
         cx: &mut Context<Self>,
     ) -> gpui_kit::AnyElement {
         let theme = cx.theme().clone();
-        let color = state_color(bead.state);
+        let color = state_color(&bead.state);
         let priority = priority_color(bead.priority);
 
         let id = bead.id.clone();
@@ -1217,8 +1219,8 @@ impl AppShell {
                 row.child(
                     div()
                         .text_xs()
-                        .text_color(state_color(State::Ready))
-                        .bg(state_color(State::Ready).opacity(0.12))
+                        .text_color(state_color(&State::Ready))
+                        .bg(state_color(&State::Ready).opacity(0.12))
                         .px_2()
                         .rounded_full()
                         .child(format!("unblocks {}", bead.dependent_count)),

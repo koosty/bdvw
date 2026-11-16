@@ -41,9 +41,19 @@ impl ReadyTab {
     }
 }
 
+/// Does `state` belong to `tab`? Unmapped statuses (bd `pinned`/`hooked`,
+/// custom statuses) have no tab of their own; they appear under Ready with
+/// their own label rather than disappearing from the view.
+fn tab_contains(tab: ReadyTab, state: &State) -> bool {
+    match tab {
+        ReadyTab::Ready => matches!(state, State::Ready | State::Custom(_)),
+        _ => *state == tab.state(),
+    }
+}
+
 /// Number of beads in `tab`. `beads` is the already-filtered set.
 pub fn tab_count(beads: &[Bead], tab: ReadyTab) -> usize {
-    beads.iter().filter(|b| b.state == tab.state()).count()
+    beads.iter().filter(|b| tab_contains(tab, &b.state)).count()
 }
 
 /// Rows for `tab`: open tabs by ready rank, Closed by most recent update.
@@ -51,7 +61,7 @@ pub fn tab_count(beads: &[Bead], tab: ReadyTab) -> usize {
 pub fn tab_rows(beads: &[Bead], tab: ReadyTab) -> Vec<Bead> {
     let mut rows: Vec<Bead> = beads
         .iter()
-        .filter(|b| b.state == tab.state())
+        .filter(|b| tab_contains(tab, &b.state))
         .cloned()
         .collect();
     match tab {

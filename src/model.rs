@@ -15,7 +15,11 @@ pub const STATUS_CLOSED: &str = "closed";
 
 /// Derived viewer state. A bead with status `open` and open blockers
 /// shows as Blocked (CONTEXT.md: State vs status).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+///
+/// Statuses the viewer has no variant for (bd built-ins `pinned` and
+/// `hooked`, or `bd config status.custom` entries) keep their raw text in
+/// `Custom` instead of being relabeled Ready.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum State {
     #[default]
     Ready,
@@ -23,18 +27,21 @@ pub enum State {
     Blocked,
     Deferred,
     Closed,
+    /// A status outside the five mapped ones, carrying its bd text.
+    Custom(String),
 }
 
 impl State {
     /// Map a stored status to the derived state, before blocker analysis.
-    fn from_status(status: &str) -> Option<Self> {
+    /// Unknown statuses become `Custom`, never `Ready`.
+    fn from_status(status: &str) -> Self {
         match status {
-            STATUS_OPEN => Some(Self::Ready),
-            STATUS_IN_PROGRESS => Some(Self::InProgress),
-            STATUS_BLOCKED => Some(Self::Blocked),
-            STATUS_DEFERRED => Some(Self::Deferred),
-            STATUS_CLOSED => Some(Self::Closed),
-            _ => None,
+            STATUS_OPEN => Self::Ready,
+            STATUS_IN_PROGRESS => Self::InProgress,
+            STATUS_BLOCKED => Self::Blocked,
+            STATUS_DEFERRED => Self::Deferred,
+            STATUS_CLOSED => Self::Closed,
+            other => Self::Custom(other.to_string()),
         }
     }
 }
@@ -47,6 +54,7 @@ impl fmt::Display for State {
             Self::Blocked => "blocked",
             Self::Deferred => "deferred",
             Self::Closed => "closed",
+            Self::Custom(raw) => return f.write_str(raw),
         };
         f.write_str(s)
     }
@@ -127,7 +135,7 @@ pub fn parse_summary(json: &str) -> Result<Vec<Bead>, String> {
 /// Compute derived state for each bead from its stored status.
 pub fn derive_state(beads: &mut [Bead]) {
     for bead in beads.iter_mut() {
-        bead.state = State::from_status(&bead.status).unwrap_or(State::Ready);
+        bead.state = State::from_status(&bead.status);
     }
 }
 
@@ -150,7 +158,7 @@ impl DepLink {
 
     /// Derived state of the linked bead, for chip coloring.
     pub fn state(&self) -> State {
-        State::from_status(&self.status).unwrap_or(State::Ready)
+        State::from_status(&self.status)
     }
 }
 
@@ -214,7 +222,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn unknown_status_defaults_to_ready() {
+    fn unknown_status_keeps_its_text() {
         let mut b = Bead {
             id: "bd-x".into(),
             title: "t".into(),
@@ -233,6 +241,6 @@ mod tests {
         };
         let slice = std::slice::from_mut(&mut b);
         derive_state(slice);
-        assert_eq!(b.state, State::Ready);
+        assert_eq!(b.state, State::Custom("weird".into()));
     }
 }

@@ -23,17 +23,18 @@ pub struct BoardCard {
 #[derive(Debug, Clone)]
 pub struct BoardColumn {
     pub state: State,
-    pub label: &'static str,
+    pub label: String,
     pub cards: Vec<BoardCard>,
 }
 
-pub fn state_label(state: State) -> &'static str {
+pub fn state_label(state: &State) -> String {
     match state {
-        State::Ready => "Ready",
-        State::InProgress => "In progress",
-        State::Blocked => "Blocked",
-        State::Deferred => "Deferred",
-        State::Closed => "Closed",
+        State::Ready => "Ready".to_string(),
+        State::InProgress => "In progress".to_string(),
+        State::Blocked => "Blocked".to_string(),
+        State::Deferred => "Deferred".to_string(),
+        State::Closed => "Closed".to_string(),
+        State::Custom(raw) => raw.clone(),
     }
 }
 
@@ -124,9 +125,10 @@ pub fn board_columns(beads: &[Bead], filters: &Filters) -> Vec<BoardColumn> {
         } else {
             list.sort_by(card_rank);
         }
+        let label = state_label(&state);
         BoardColumn {
             state,
-            label: state_label(state),
+            label,
             cards: list,
         }
     };
@@ -138,6 +140,17 @@ pub fn board_columns(beads: &[Bead], filters: &Filters) -> Vec<BoardColumn> {
     ];
     if cards.iter().any(|c| c.bead.state == State::Deferred) {
         cols.push(make_col(State::Deferred, &cards));
+    }
+    // Unmapped statuses keep their own column, after the mapped ones, in
+    // first-seen order so the board is deterministic.
+    let mut custom: Vec<State> = Vec::new();
+    for card in &cards {
+        if matches!(card.bead.state, State::Custom(_)) && !custom.contains(&card.bead.state) {
+            custom.push(card.bead.state.clone());
+        }
+    }
+    for state in custom {
+        cols.push(make_col(state, &cards));
     }
     if cards.iter().any(|c| c.bead.state == State::Closed) {
         cols.push(make_col(State::Closed, &cards));

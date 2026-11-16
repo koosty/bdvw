@@ -89,7 +89,7 @@ fn columns_by_state_with_labels() {
     ]);
     let f = Filters { show_closed: true, ..Filters::default() };
     let cols = board_columns(&beads, &f);
-    let labels: Vec<&str> = cols.iter().map(|c| c.label).collect();
+    let labels: Vec<String> = cols.iter().map(|c| c.label.clone()).collect();
     assert_eq!(
         labels,
         vec!["Ready", "In progress", "Blocked", "Deferred", "Closed"]
@@ -165,9 +165,9 @@ fn closed_column_capped_and_recent_first() {
 
 #[test]
 fn labels_cover_states() {
-    assert_eq!(state_label(State::Ready), "Ready");
-    assert_eq!(state_label(State::InProgress), "In progress");
-    assert_eq!(state_label(State::Blocked), "Blocked");
-    assert_eq!(state_label(State::Deferred), "Deferred");
-    assert_eq!(state_label(State::Closed), "Closed");
+    assert_eq!(state_label(&State::Ready), "Ready");
+    assert_eq!(state_label(&State::InProgress), "In progress");
+    assert_eq!(state_label(&State::Blocked), "Blocked");
+    assert_eq!(state_label(&State::Deferred), "Deferred");
+    assert_eq!(state_label(&State::Closed), "Closed");
 }

@@ -92,7 +92,7 @@ impl BoardView {
     ) -> AnyElement {
         let theme = cx.theme().clone();
         let bead = &card.bead;
-        let color = crate::app::state_color(bead.state);
+        let color = crate::app::state_color(&bead.state);
         let id = bead.id.clone();
 
         let mut card_el = div()
@@ -230,7 +230,7 @@ impl Render for BoardView {
                 .columns
                 .iter()
                 .map(|col| {
-                    let color = crate::app::state_color(col.state);
+                    let color = crate::app::state_color(&col.state);
                     let cards: Vec<AnyElement> = col
                         .cards
                         .iter()
@@ -270,7 +270,7 @@ impl Render for BoardView {
                                     div()
                                         .text_sm()
                                         .font_weight(gpui_kit::FontWeight::SEMIBOLD)
-                                        .child(col.label),
+                                        .child(col.label.clone()),
                                 )
                                 .child(
                                     div()

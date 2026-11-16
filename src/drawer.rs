@@ -334,7 +334,7 @@ fn chips(bead: &Bead, theme: &Theme) -> impl IntoElement {
         .flex_wrap()
         .items_center()
         .gap_1()
-        .child(state_pill(bead.state))
+        .child(state_pill(&bead.state))
         .child(
             div()
                 .text_xs()
@@ -366,7 +366,7 @@ fn pill(text: String, theme: &Theme) -> impl IntoElement {
         .child(text)
 }
 
-fn state_pill(state: State) -> impl IntoElement {
+fn state_pill(state: &State) -> impl IntoElement {
     let color = state_color(state);
     div()
         .flex()
@@ -427,7 +427,7 @@ where
     let rows = links
         .into_iter()
         .map(|l| {
-            let color = state_color(l.state());
+            let color = state_color(&l.state());
             let open = open.clone();
             let id = l.id.clone();
             div()

@@ -112,7 +112,7 @@ impl Store {
     pub fn ready(&self) -> Vec<Bead> {
         self.beads
             .iter()
-            .filter(|b| b.state == State::Ready)
+            .filter(|b| matches!(b.state, State::Ready | State::Custom(_)))
             .cloned()
             .collect()
     }

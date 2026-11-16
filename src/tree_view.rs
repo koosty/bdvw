@@ -143,7 +143,7 @@ impl TreeView {
     ) -> AnyElement {
         let theme = cx.theme().clone();
         let bead = &row.bead;
-        let color = crate::app::state_color(bead.state);
+        let color = crate::app::state_color(&bead.state);
         let toggle_id = bead.id.clone();
         let click_id = bead.id.clone();
         let caret = if row.has_children {
@@ -247,7 +247,7 @@ impl TreeView {
                                     .w(px(54. * frac))
                                     .h(px(4.))
                                     .bg(crate::app::state_color(
-                                        crate::model::State::Closed,
+                                        &crate::model::State::Closed,
                                     )),
                             ),
                     )
