@@ -25,9 +25,17 @@ pub struct RawDep {
 pub struct Component {
     #[serde(rename = "Issues")]
     pub issues: Vec<Bead>,
-    #[serde(rename = "Dependencies")]
-    #[serde(default)]
+    #[serde(rename = "Dependencies", default, deserialize_with = "null_as_empty")]
     pub dependencies: Vec<RawDep>,
+}
+
+/// bd writes `"Dependencies": null` (not `[]`) for components without edges.
+fn null_as_empty<'de, D, T>(de: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Option::<Vec<T>>::deserialize(de)?.unwrap_or_default())
 }
 
 /// Edge rendered blocker -> blocked.

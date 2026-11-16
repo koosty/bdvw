@@ -115,7 +115,6 @@ impl AppShell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        store.update(cx, |store, cx| client.refresh(store, cx));
         let graph_view = cx.new(|_| crate::graph_view::GraphView::new());
         let tree_view = cx.new(|_| crate::tree_view::TreeView::new());
         // Tree row clicks open the detail drawer.
@@ -190,6 +189,9 @@ impl AppShell {
             }
         })
         .detach();
+        // Initial load runs after the observer exists so its notify reaches
+        // the tree and board; a load before subscribing never delivers data.
+        store.update(cx, |store, cx| client.refresh(store, cx));
 
         // Shared filter surface: search input state drives Store.filters
         // (bdui-rs-8db).

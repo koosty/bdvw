@@ -175,3 +175,12 @@ fn dep_edge_direction_is_blocker_first() {
     };
     assert_eq!(e.from, "blocker");
 }
+
+#[test]
+fn null_dependencies_parse_as_empty() {
+    // bd emits `"Dependencies": null` for components with no edges.
+    let raw = json!([{ "Issues": [issue("a", "A", 2)], "Dependencies": null }]);
+    let data = parse_components(&raw.to_string()).expect("null dependencies is valid bd output");
+    let laid = layout_graph(&data);
+    assert_eq!(laid.nodes.len(), 1);
+}
