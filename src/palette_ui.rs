@@ -36,12 +36,14 @@ pub struct Palette {
     beads: Vec<Bead>,
     commands: Vec<PaletteCommand>,
     focus_handle: gpui_kit::FocusHandle,
+    /// Where keyboard focus returns when the palette closes.
+    return_focus: gpui_kit::FocusHandle,
 }
 
 impl gpui_kit::EventEmitter<PaletteEvent> for Palette {}
 
 impl Palette {
-    pub fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(return_focus: gpui_kit::FocusHandle, cx: &mut Context<Self>) -> Self {
         let mut this = Self {
             open: false,
             query: String::new(),
@@ -50,6 +52,7 @@ impl Palette {
             beads: Vec::new(),
             commands: palette_commands(),
             focus_handle: cx.focus_handle(),
+            return_focus,
         };
         this.recompute();
         this
@@ -63,11 +66,12 @@ impl Palette {
         cx.notify();
     }
 
-    pub fn close(&mut self, cx: &mut Context<Self>) {
+    pub fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.open = false;
         self.query.clear();
         self.matches.clear();
         self.selected = None;
+        window.focus(&self.return_focus, cx);
         cx.notify();
     }
 
@@ -92,7 +96,7 @@ impl Palette {
     pub fn handle_key(
         &mut self,
         event: &gpui_kit::KeyDownEvent,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
         if !self.open {
@@ -104,7 +108,7 @@ impl Palette {
         }
         match ks.key.as_str() {
             "escape" => {
-                self.close(cx);
+                self.close(window, cx);
                 true
             }
             "down" | "j" => {
@@ -127,6 +131,7 @@ impl Palette {
             "enter" => {
                 let action = self.selected_action();
                 if let Some(action) = action {
+                    self.close(window, cx);
                     cx.emit(PaletteEvent::Pick(action));
                 }
                 cx.notify();
@@ -199,8 +204,8 @@ impl Render for Palette {
             .justify_center()
             .items_start()
             .pt(px(120.))
-            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, _, cx| {
-                this.close(cx);
+            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
+                this.close(window, cx);
             }))
             .child(
                 div()

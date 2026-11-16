@@ -206,7 +206,7 @@ impl BoardView {
 impl Render for BoardView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme().clone();
-        let selected = self.selected;
+        let selected_id = self.selected.and_then(|i| self.flat.get(i)).cloned();
 
         let body = if let Some(err) = &self.error {
             div()
@@ -236,7 +236,8 @@ impl Render for BoardView {
                         .iter()
                         .enumerate()
                         .map(|(i, card)| {
-                            self.render_card(card, i, Some(i) == selected, cx)
+                            let is_selected = selected_id.as_deref() == Some(card.bead.id.as_str());
+                            self.render_card(card, i, is_selected, cx)
                         })
                         .collect();
                     div()

@@ -150,7 +150,7 @@ impl AppShell {
         .detach();
         let handle = cx.focus_handle();
         window.focus(&handle, cx);
-        let palette = cx.new(|cx| crate::palette_ui::Palette::new(window, cx));
+        let palette = cx.new(|cx| crate::palette_ui::Palette::new(handle.clone(), cx));
         // Palette picks dispatch to the shell.
         cx.subscribe(&palette, |shell, _, event, cx| {
             let crate::palette_ui::PaletteEvent::Pick(action) = event;
@@ -318,6 +318,16 @@ impl AppShell {
             return;
         }
 
+        // Esc closes the drawer from every view. The view branches below
+        // return early and would otherwise swallow it.
+        if key == "escape" {
+            let drawer = self.drawer.clone();
+            window.defer(cx, move |_, cx| {
+                drawer.update(cx, |drawer, cx| drawer.close(cx));
+            });
+            return;
+        }
+
         // `g` prefix mode: next key picks a view.
         if self.g_prefix {
             self.g_prefix = false;
@@ -433,14 +443,6 @@ impl AppShell {
                         });
                     }
                 }
-            }
-            // Palette handles its own Esc; this closes the drawer when no
-            // palette is open (the is_open early-return above covers that).
-            "escape" => {
-                let drawer = self.drawer.clone();
-                window.defer(cx, move |_, cx| {
-                    drawer.update(cx, |drawer, cx| drawer.close(cx));
-                });
             }
             _ => {}
         }
@@ -1249,8 +1251,6 @@ fn shell_palette_pick(
     action: crate::palette_ui::PaletteAction,
     cx: &mut Context<AppShell>,
 ) {
-    let palette = shell.palette.clone();
-    palette.update(cx, |palette, cx| palette.close(cx));
     match action {
         crate::palette_ui::PaletteAction::OpenBead(id) => {
             let drawer = shell.drawer.clone();
