@@ -52,6 +52,10 @@ pub struct AppShell {
     activity_view: Entity<crate::activity_view::ActivityView>,
     /// One activity fetch at a time while the view is active.
     activity_in_flight: bool,
+    /// Set when the feed is requested mid-sweep; the sweep reruns on completion.
+    activity_dirty: bool,
+    /// Per-bead history memo (bdui-rs-2u6): refetch only changed beads.
+    activity_cache: crate::activity::HistoryCache,
     /// Search input state for the shared filter surface.
     search_input: gpui_kit::Entity<gpui_kit::component::input::InputState>,
     drawer: Entity<crate::drawer::Drawer>,
@@ -237,6 +241,8 @@ impl AppShell {
             board_view,
             activity_view,
             activity_in_flight: false,
+            activity_dirty: false,
+            activity_cache: crate::activity::HistoryCache::default(),
             search_input,
             drawer,
             palette,
@@ -442,40 +448,36 @@ impl AppShell {
         cx.notify();
     }
 
-    /// Fetch every bead's audit events off the UI thread and merge into
-    /// the activity feed (bdui-rs-2u6). One bd process at a time through
-    /// the shared client; single-bead failures drop from the feed.
+    /// Refresh the activity feed (bdui-rs-2u6). Only beads whose `updated_at`
+    /// moved since the last sweep are refetched; the rest come from the memo.
+    /// One sweep in flight at a time. A request that arrives mid-sweep sets
+    /// `activity_dirty` and reruns on completion, so no store change is lost.
     fn refresh_activity(
         &mut self,
         client: &dyn BeadsClientShim,
         cx: &mut Context<Self>,
     ) {
-        // One fetch in flight at a time; the completion path clears it.
         if self.activity_in_flight {
+            self.activity_dirty = true;
             return;
         }
         self.activity_in_flight = true;
-        let ids: Vec<String> = self
-            .store
-            .read(cx)
-            .beads()
-            .iter()
-            .map(|b| b.id.clone())
-            .collect();
         let beads = self.store.read(cx).beads().to_vec();
+        let stale = self.activity_cache.stale(&beads);
+        let cache = std::mem::take(&mut self.activity_cache);
         let poll = client.poll_client();
         let activity = self.activity_view.clone();
         cx.spawn(async move |shell, cx| {
-            let fetch = poll.clone();
-            let events = cx
+            let cache = cx
                 .background_spawn(async move {
-                    let mut out = Vec::new();
-                    for id in &ids {
-                        if let Ok(mut evs) = fetch.history(id) {
-                            out.append(&mut evs);
+                    let mut cache = cache;
+                    for (id, updated_at) in stale {
+                        // Failed fetches stay unmemoized and retry next sweep.
+                        if let Ok(evs) = poll.history(&id) {
+                            cache.insert(id, updated_at, evs);
                         }
                     }
-                    out
+                    cache
                 })
                 .await;
             let shell = shell.clone();
@@ -483,7 +485,15 @@ impl AppShell {
                 let Some(shell) = shell.upgrade() else { return };
                 shell.update(cx, |shell, cx| {
                     shell.activity_in_flight = false;
+                    let mut cache = cache;
+                    cache.prune(&beads);
+                    let events = cache.events();
+                    shell.activity_cache = cache;
                     activity.update(cx, |av, cx| av.set_feed(&beads, events, cx));
+                    if std::mem::take(&mut shell.activity_dirty) {
+                        let client = shell.client.clone();
+                        shell.refresh_activity(client.as_ref(), cx);
+                    }
                 })
             });
         })

@@ -1,9 +1,10 @@
 //! Detail drawer: right-hand column over the main pane. Ticket bdui-rs-it5.
-//! The selected bead id lives in this Drawer entity; the full record is
-//! fetched synchronously via the client seam on open.
+//! The selected bead id and its load state live in this Drawer entity. The
+//! full record loads off the UI thread through the client seam on open.
 
 use crate::app::{priority_color, state_color};
 use crate::model::{BeadDetail, Comment, DepLink, State};
+use gpui_kit::AppContext as _;
 use gpui_kit::component::clipboard::Clipboard;
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::prelude::FluentBuilder as _;
@@ -12,74 +13,176 @@ use gpui_kit::{
     SharedString, StatefulInteractiveElement as _, Styled as _, Window, div, px,
 };
 use gpui_kit::component::theme::Theme;
-use std::rc::Rc;
+use std::sync::Arc;
 
-/// Transport for drawer loads (the shell's client shim adapts BeadsClient).
-pub trait DetailClient {
+/// Transport for drawer loads. `Send + Sync` so loads run off the UI thread.
+pub trait DetailClient: Send + Sync {
     fn detail(&self, id: &str) -> Result<BeadDetail, String>;
+}
+
+/// Pure load state for the drawer (bdui-rs-A2). The last good detail survives
+/// failed reloads, and results from a superseded request are discarded.
+#[derive(Debug, Default)]
+pub struct DetailSlot {
+    selected: Option<String>,
+    detail: Option<BeadDetail>,
+    error: Option<String>,
+    seq: u64,
+}
+
+impl DetailSlot {
+    /// Select `id` and return the token its load must present. Re-selecting
+    /// the same id keeps the previous detail on screen while it reloads.
+    pub fn begin(&mut self, id: &str) -> u64 {
+        if self.selected.as_deref() != Some(id) {
+            self.detail = None;
+        }
+        self.selected = Some(id.to_string());
+        self.seq += 1;
+        self.seq
+    }
+
+    /// Token for reloading the current selection, if any.
+    pub fn begin_refresh(&mut self) -> Option<(String, u64)> {
+        let id = self.selected.clone()?;
+        self.seq += 1;
+        Some((id, self.seq))
+    }
+
+    /// Apply a load result if its token is still current. A failure keeps
+    /// the previous detail and records the error. Returns whether it applied.
+    pub fn apply(&mut self, seq: u64, result: Result<BeadDetail, String>) -> bool {
+        if seq != self.seq {
+            return false;
+        }
+        match result {
+            Ok(detail) => {
+                self.detail = Some(detail);
+                self.error = None;
+            }
+            Err(message) => self.error = Some(message),
+        }
+        true
+    }
+
+    pub fn close(&mut self) {
+        self.selected = None;
+        self.detail = None;
+        self.error = None;
+        self.seq += 1;
+    }
+
+    pub fn selected(&self) -> Option<&str> {
+        self.selected.as_deref()
+    }
+
+    pub fn detail(&self) -> Option<&BeadDetail> {
+        self.detail.as_ref()
+    }
+
+    pub fn error(&self) -> Option<&str> {
+        self.error.as_deref()
+    }
 }
 
 /// Right-pane drawer state. Owns selection so the shell's list keeps its
 /// scroll position ("never unseats the list").
 pub struct Drawer {
-    pub selected: Option<String>,
-    detail: Option<BeadDetail>,
-    client: Rc<dyn DetailClient>,
+    slot: DetailSlot,
+    client: Arc<dyn DetailClient>,
 }
 
 impl Drawer {
-    pub fn new(client: Rc<dyn DetailClient>) -> Self {
-        Self { selected: None, detail: None, client }
+    pub fn new(client: Arc<dyn DetailClient>) -> Self {
+        Self { slot: DetailSlot::default(), client }
     }
 
     /// Re-fetch the detail for the currently selected bead (poll path).
     pub fn refresh(&mut self, cx: &mut Context<Drawer>) {
-        if let Some(id) = self.selected.clone() {
-            self.detail = self.client.detail(&id).ok();
-            cx.notify();
+        if let Some((id, seq)) = self.slot.begin_refresh() {
+            self.load(id, seq, cx);
         }
     }
 
     /// The bead currently open, if any.
     pub fn open_id(&self) -> Option<&str> {
-        self.selected.as_deref()
+        self.slot.selected()
     }
 
-    /// Select a bead and load its full record. Re-selecting the same id
-    /// reloads it (cheap; external writes may have changed it).
+    /// Select a bead and load its full record off the UI thread.
     pub fn open(&mut self, id: &str, cx: &mut Context<Drawer>) {
-        self.selected = Some(id.to_string());
-        self.detail = self.client.detail(id).ok();
+        let seq = self.slot.begin(id);
+        self.load(id.to_string(), seq, cx);
         cx.notify();
     }
 
     pub fn close(&mut self, cx: &mut Context<Drawer>) {
-        self.selected = None;
-        self.detail = None;
+        self.slot.close();
         cx.notify();
     }
+
+    /// Fetch on the background executor; apply on the UI thread if the
+    /// request is still current.
+    fn load(&self, id: String, seq: u64, cx: &mut Context<Drawer>) {
+        let client = self.client.clone();
+        cx.spawn(async move |drawer, cx| {
+            let result = cx
+                .background_spawn(async move { client.detail(&id) })
+                .await;
+            let _ = drawer.update(cx, |drawer, cx| {
+                if drawer.slot.apply(seq, result) {
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
 }
+
 
 impl Render for Drawer {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Drawer>) -> impl IntoElement {
         let theme = cx.theme().clone();
 
-        match (&self.selected, &self.detail) {
-            (_, Some(_)) => self.render_detail(&theme, window, cx),
-            (Some(id), None) => div()
-                .w(px(430.))
-                .h_full()
-                .overflow_hidden()
-                .border_l_1()
-                .border_color(theme.border)
-                .bg(theme.background)
-                .p_4()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .child("Detail")
-                .child(SharedString::from(format!("Could not load {id}.")))
-                .into_any_element(),
+        match (self.slot.selected(), self.slot.detail()) {
+            (_, Some(_)) => {
+                let banner = self
+                    .slot
+                    .error()
+                    .map(|e| SharedString::from(format!("Refresh failed: {e}")));
+                let detail = self.render_detail(&theme, window, cx);
+                match banner {
+                    None => detail,
+                    Some(text) => div()
+                        .w(px(430.))
+                        .h_full()
+                        .flex()
+                        .flex_col()
+                        .child(div().p_2().text_xs().text_color(theme.danger).child(text))
+                        .child(detail)
+                        .into_any_element(),
+                }
+            }
+            (Some(id), None) => {
+                let text = match self.slot.error() {
+                    Some(e) => format!("Could not load {id}: {e}"),
+                    None => format!("Loading {id}…"),
+                };
+                div()
+                    .w(px(430.))
+                    .h_full()
+                    .overflow_hidden()
+                    .border_l_1()
+                    .border_color(theme.border)
+                    .bg(theme.background)
+                    .p_4()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child("Detail")
+                    .child(SharedString::from(text))
+                    .into_any_element()
+            }
             _ => div().into_any_element(),
         }
     }
@@ -92,7 +195,7 @@ impl Drawer {
         window: &mut Window,
         cx: &mut Context<Drawer>,
     ) -> gpui_kit::AnyElement {
-        let detail = self.detail.as_ref().expect("checked in render");
+        let detail = self.slot.detail().expect("checked in render");
         // Chips open the linked bead in this drawer.
         let chip_drawer = cx.entity();
         let open_in_drawer = move |id: &str, window: &mut Window, cx: &mut gpui_kit::App| {

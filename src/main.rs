@@ -41,9 +41,10 @@ fn main() {
         .run(|cx| {
             gpui_kit::init(cx);
             gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
-                let client = Rc::new(CliShim { client: Arc::new(CliClient::new()) });
+                let cli = Arc::new(CliClient::new());
+                let client = Rc::new(CliShim { client: cli.clone() });
                 let store = cx.new(|_| Store::new());
-                let drawer = cx.new(|_| Drawer::new(client.clone()));
+                let drawer = cx.new(|_| Drawer::new(Arc::new(CliShim { client: cli.clone() })));
                 cx.new(|cx| AppShell::new(store, client, drawer, window, cx))
             })
             .expect("failed to open window");

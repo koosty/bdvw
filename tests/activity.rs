@@ -102,6 +102,46 @@ fn labels_map_kinds() {
     assert_eq!(event_label("mystery_event"), "mystery_event");
 }
 
+fn stamped(id: &str, updated_at: &str) -> Bead {
+    serde_json::from_value(json!({
+        "id": id,
+        "title": id,
+        "status": "open",
+        "priority": 2,
+        "issue_type": "task",
+        "updated_at": updated_at,
+    }))
+    .unwrap()
+}
+
+#[test]
+fn cache_refetches_only_new_or_changed_beads() {
+    use bdui::activity::HistoryCache;
+    let mut cache = HistoryCache::default();
+    let beads = vec![stamped("a", "t1"), stamped("b", "t1")];
+    assert_eq!(cache.stale(&beads).len(), 2, "cold cache fetches everything");
+
+    cache.insert("a".into(), "t1".into(), vec![event("e1", "a", "created", "k", "t1")]);
+    cache.insert("b".into(), "t1".into(), vec![]);
+    assert!(cache.stale(&beads).is_empty(), "unchanged stamps are memo hits");
+
+    // Bead b moved on; a is untouched.
+    let moved = vec![stamped("a", "t1"), stamped("b", "t2")];
+    assert_eq!(cache.stale(&moved), vec![("b".to_string(), "t2".to_string())]);
+}
+
+#[test]
+fn cache_prunes_departed_beads() {
+    use bdui::activity::HistoryCache;
+    let mut cache = HistoryCache::default();
+    cache.insert("a".into(), "t1".into(), vec![event("e1", "a", "created", "k", "t1")]);
+    cache.insert("gone".into(), "t1".into(), vec![event("e2", "gone", "created", "k", "t1")]);
+    cache.prune(&[stamped("a", "t1")]);
+    let events = cache.events();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].issue_id, "a");
+}
+
 // S2: history transport against the real `bd` CLI.
 #[test]
 fn history_events_from_real_bd() {

@@ -8,6 +8,7 @@
 
 use crate::model::Bead;
 use serde::Deserialize;
+use std::collections::{HashMap, HashSet};
 
 /// One audit event from `bd history <id> --events --json`.
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -75,8 +76,9 @@ pub struct ActivityDay {
 }
 
 /// Merge per-bead histories into a day-grouped feed. Duplicate event ids
-/// (same bead fetched twice) drop; ordering is by created_at descending,
-/// falling back to id for stamps that tie or fail to compare.
+/// (same bead fetched twice) drop; ordering is by created_at descending.
+/// Ties keep the incoming order: bd lists a bead's events in no guaranteed
+/// order, so same-second ties carry no sequence signal.
 pub fn activity_feed(beads: &[Bead], events: Vec<ActivityEvent>) -> Vec<ActivityDay> {
     let title = |id: &str| {
         beads
@@ -112,4 +114,44 @@ pub fn activity_feed(beads: &[Bead], events: Vec<ActivityEvent>) -> Vec<Activity
         }
     }
     days
+}
+
+/// Per-bead memo of fetched history, keyed by the bead's `updated_at` from
+/// its list row (bdui-rs-2u6). A bead whose stamp moved has changed, so only
+/// those beads are refetched on the next sweep.
+#[derive(Debug, Clone, Default)]
+pub struct HistoryCache {
+    entries: HashMap<String, (String, Vec<ActivityEvent>)>,
+}
+
+impl HistoryCache {
+    /// `(id, updated_at)` for every bead with no memo or a stale one.
+    pub fn stale(&self, beads: &[Bead]) -> Vec<(String, String)> {
+        beads
+            .iter()
+            .filter(|b| match self.entries.get(&b.id) {
+                Some((stamp, _)) => stamp != &b.updated_at,
+                None => true,
+            })
+            .map(|b| (b.id.clone(), b.updated_at.clone()))
+            .collect()
+    }
+
+    pub fn insert(&mut self, id: String, updated_at: String, events: Vec<ActivityEvent>) {
+        self.entries.insert(id, (updated_at, events));
+    }
+
+    /// Drop memos for beads that left the list.
+    pub fn prune(&mut self, beads: &[Bead]) {
+        let keep: HashSet<&str> = beads.iter().map(|b| b.id.as_str()).collect();
+        self.entries.retain(|id, _| keep.contains(id.as_str()));
+    }
+
+    /// Every memoized event, across retained beads.
+    pub fn events(&self) -> Vec<ActivityEvent> {
+        self.entries
+            .values()
+            .flat_map(|(_, evs)| evs.iter().cloned())
+            .collect()
+    }
 }
