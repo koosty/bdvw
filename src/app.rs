@@ -10,6 +10,7 @@ use gpui_kit::component::sidebar::{
 };
 use gpui_kit::assets::IconName;
 use gpui_kit::component::ActiveTheme;
+use gpui_kit::component::WindowExt as _;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
@@ -43,6 +44,10 @@ pub struct AppShell {
     store: Entity<Store>,
     /// Graph view; reloaded when the view activates.
     graph_view: Entity<crate::graph_view::GraphView>,
+    /// Tree view; refed from the store on every change (bdui-rs-8db).
+    tree_view: Entity<crate::tree_view::TreeView>,
+    /// Search input state for the shared filter surface.
+    search_input: gpui_kit::Entity<gpui_kit::component::input::InputState>,
     drawer: Entity<crate::drawer::Drawer>,
     /// Command palette overlay (bdui-rs-ue2).
     palette: Entity<crate::palette_ui::Palette>,
@@ -77,6 +82,14 @@ impl AppShell {
     ) -> Self {
         store.update(cx, |store, cx| client.refresh(store, cx));
         let graph_view = cx.new(|_| crate::graph_view::GraphView::new());
+        let tree_view = cx.new(|_| crate::tree_view::TreeView::new());
+        // Tree row clicks open the detail drawer.
+        cx.subscribe(&tree_view, |shell, _, event, cx| {
+            let crate::tree_view::TreeViewEvent::NodeClicked(id) = event;
+            let drawer = shell.drawer.clone();
+            drawer.update(cx, |drawer, cx| drawer.open(id, cx));
+        })
+        .detach();
         // Graph node clicks open the detail drawer.
         cx.subscribe(&graph_view, |shell, _, event, cx| {
             if let crate::graph_view::GraphViewEvent::NodeClicked(id) = event {
@@ -97,10 +110,18 @@ impl AppShell {
         // Keep palette bead jumps in sync with store refreshes, and reload
         // the graph when its data may have changed while it is the active
         // view (the store observe fires on every poll apply).
-        cx.observe(&store, |shell, _store, cx| {
-            let beads = _store.read(cx).ready().to_vec();
+        cx.observe(&store, |shell, store, cx| {
+            let beads = store.read(cx).ready().to_vec();
             let palette = shell.palette.clone();
             palette.update(cx, |palette, cx| palette.set_beads(beads, cx));
+            // The tree always tracks the store, not just when visible:
+            // filters and data stay live across view jumps.
+            {
+                let all = store.read(cx).beads().to_vec();
+                let filters = store.read(cx).filters().clone();
+                let tree_view = shell.tree_view.clone();
+                tree_view.update(cx, |tv, cx| tv.set_data(all, filters, cx));
+            }
             if let crate::palette::ViewKind::Graph = shell.active_view {
                 let graph_view = shell.graph_view.clone();
                 let client = shell.client.clone();
@@ -108,6 +129,25 @@ impl AppShell {
                 graph_view.update(cx, |gv, cx| match data {
                     Ok(data) => gv.reload(&data, cx),
                     Err(e) => gv.reload_failed(e, cx),
+                });
+            }
+        })
+        .detach();
+
+        // Shared filter surface: search input state drives Store.filters
+        // (bdui-rs-8db).
+        let search_input = cx.new(|cx| {
+            gpui_kit::component::input::InputState::new(window, cx)
+                .placeholder("Search id, title, label, assignee…")
+        });
+        cx.subscribe(&search_input, |shell, input, event: &gpui_kit::component::input::InputEvent, cx| {
+            if matches!(event, gpui_kit::component::input::InputEvent::Change) {
+                let q = input.read(cx).value().to_string();
+                let store = shell.store.clone();
+                store.update(cx, |store, cx| {
+                    let mut f = store.filters().clone();
+                    f.query = q;
+                    store.set_filters(f, cx);
                 });
             }
         })
@@ -165,6 +205,8 @@ impl AppShell {
         Self {
             store,
             graph_view,
+            tree_view,
+            search_input,
             drawer,
             palette,
             selected_row: None,
@@ -186,6 +228,12 @@ impl AppShell {
     ) {
         let key = event.keystroke.key.as_str();
         let mods = &event.keystroke.modifiers;
+
+        // While a text input (filter search) is focused, plain keys type
+        // text; only palette/dismiss chords stay global (bdui-rs-8db).
+        if window.has_focused_input(cx) && !(mods.platform || mods.control) {
+            return;
+        }
 
         // Cmd/Ctrl+K: open the palette from anywhere.
         if (mods.platform || mods.control) && key == "k" {
@@ -257,7 +305,25 @@ impl AppShell {
             return;
         }
 
-        let ready = self.store.read(cx).ready();
+        // Tree view owns j/k/Enter over its rows (bdui-rs-8db).
+        if self.active_view == crate::palette::ViewKind::Tree {
+            let tree = self.tree_view.clone();
+            match key {
+                "j" => tree.update(cx, |tv, cx| tv.move_selection(1, cx)),
+                "k" => tree.update(cx, |tv, cx| tv.move_selection(-1, cx)),
+                "enter" => tree.update(cx, |tv, cx| tv.activate(cx)),
+                _ => {}
+            }
+            return;
+        }
+
+        let ready = self
+            .store
+            .read(cx)
+            .filtered()
+            .into_iter()
+            .filter(|b| b.state == State::Ready)
+            .collect::<Vec<_>>();
         match key {
             "j" => {
                 if ready.is_empty() {
@@ -323,7 +389,14 @@ impl AppShell {
 impl Render for AppShell {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
-        let ready = self.store.read(cx).ready();
+        // The Ready list respects the shared filter surface (bdui-rs-8db).
+        let ready = self
+            .store
+            .read(cx)
+            .filtered()
+            .into_iter()
+            .filter(|b| b.state == State::Ready)
+            .collect::<Vec<_>>();
 
         div()
             .id("shell-root")
@@ -389,6 +462,7 @@ impl AppShell {
                 .render_ready_list(ready, cx)
                 .into_any_element(),
             crate::palette::ViewKind::Graph => self.graph_view.clone().into_any_element(),
+            crate::palette::ViewKind::Tree => self.tree_view.clone().into_any_element(),
             view => {
                 let theme = cx.theme().clone();
                 div()
@@ -407,12 +481,18 @@ impl AppShell {
     }
 
     fn render_topbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
-        let store = self.store.read(cx);
-        let dot = if store.is_synced() {
-            state_color(State::Ready)
-        } else {
-            theme.muted_foreground
+        let theme = cx.theme().clone();
+        let (dot, bead_count, sync_label) = {
+            let store = self.store.read(cx);
+            (
+                if store.is_synced() {
+                    state_color(State::Ready)
+                } else {
+                    theme.muted_foreground
+                },
+                store.beads().len(),
+                store.sync_label(),
+            )
         };
 
         div()
@@ -433,10 +513,19 @@ impl AppShell {
                 div()
                     .text_xs()
                     .text_color(theme.muted_foreground)
-                    .child(format!("{} beads", store.beads().len())),
+                    .child(format!("{bead_count} beads")),
             )
             .flex_1()
-            .child(div())
+            // Shared filter surface (bdui-rs-8db).
+            .child(
+                div()
+                    .id("filter-search")
+                    .flex()
+                    .items_center()
+                    .w(px(240.))
+                    .child(gpui_kit::component::input::Input::new(&self.search_input)),
+            )
+            .child(self.render_filter_menus(cx))
             .child(
                 div()
                     .flex()
@@ -445,8 +534,218 @@ impl AppShell {
                     .text_xs()
                     .text_color(theme.muted_foreground)
                     .child(div().size(px(7.)).rounded_full().bg(dot))
-                    .child(SharedString::from(store.sync_label().to_string())),
+                    .child(SharedString::from(sync_label)),
             )
+    }
+
+    /// Type/priority/assignee filter popovers + closed toggle. Options are
+    /// derived from the current bead set like the prototype's select
+    /// population.
+    fn render_filter_menus(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
+        let theme = cx.theme().clone();
+        let (types, who, filters, show_closed) = {
+            let store = self.store.read(cx);
+            let filters = store.filters().clone();
+            let types: Vec<String> = {
+            let mut v: Vec<String> = store
+                .beads()
+                .iter()
+                .map(|b| b.issue_type.clone())
+                .filter(|t| !t.is_empty())
+                .collect();
+            v.sort();
+            v.dedup();
+            v
+        };
+        
+            let who: Vec<String> = {
+                let mut v: Vec<String> = store
+                    .beads()
+                    .iter()
+                    .filter_map(|b| b.assignee.clone())
+                    .collect();
+                v.sort();
+                v.dedup();
+                v
+            };
+            (types, who, filters.clone(), filters.show_closed)
+        };
+        let store_handle = self.store.clone();
+
+        let type_label = filters
+            .issue_type
+            .clone()
+            .unwrap_or_else(|| "All types".into());
+        let prio_label = filters
+            .priority
+            .map(|p| format!("P{p}"))
+            .unwrap_or_else(|| "Any priority".into());
+        let who_label = match &filters.assignee {
+            None => "Anyone".to_string(),
+            Some(None) => "Unassigned".to_string(),
+            Some(Some(w)) => w.clone(),
+        };
+        let _ = show_closed;
+
+        // Option rows via a generic helper (impl Trait cannot be a closure
+        // parameter).
+        // Option lists build with plain loops: filter_option needs &mut cx
+        // per call, which closures over .map cannot provide.
+        let mut type_opts: Vec<gpui_kit::AnyElement> = vec![Self::filter_option(
+            cx,
+            "All types",
+            filters.issue_type.is_none(),
+            store_handle.clone(),
+            |f| f.issue_type = None,
+        )];
+        for t in &types {
+            let t = t.clone();
+            type_opts.push(Self::filter_option(
+                cx,
+                &t.clone(),
+                filters.issue_type.as_deref() == Some(t.as_str()),
+                store_handle.clone(),
+                move |f| f.issue_type = Some(t.clone()),
+            ));
+        }
+
+        let mut prio_opts: Vec<gpui_kit::AnyElement> = Vec::new();
+        for p in 0..=4u8 {
+            let store = store_handle.clone();
+            prio_opts.push(
+                div()
+                    .id(SharedString::from(format!("filter-opt-P{p}")))
+                    .px_2()
+                    .py_1()
+                    .rounded_sm()
+                    .text_xs()
+                    .when(filters.priority == Some(p), |el| {
+                        el.bg(theme.accent.opacity(0.12))
+                            .text_color(theme.accent)
+                    })
+                    .hover(|s| s.bg(theme.accent.opacity(0.06)))
+                    .on_click(cx.listener(move |_, _, _, cx| {
+                        store.update(cx, |store, cx| {
+                            let mut f = store.filters().clone();
+                            f.priority = Some(p);
+                            store.set_filters(f, cx);
+                        });
+                    }))
+                    .child(SharedString::from(format!("P{p}")))
+                    .into_any_element(),
+            );
+        }
+        prio_opts.push(Self::filter_option(
+            cx,
+            "Any priority",
+            filters.priority.is_none(),
+            store_handle.clone(),
+            |f| f.priority = None,
+        ));
+
+        let mut who_opts: Vec<gpui_kit::AnyElement> = vec![
+            Self::filter_option(
+                cx,
+                "Anyone",
+                filters.assignee.is_none(),
+                store_handle.clone(),
+                |f| f.assignee = None,
+            ),
+            Self::filter_option(
+                cx,
+                "Unassigned",
+                filters.assignee == Some(None),
+                store_handle.clone(),
+                |f| f.assignee = Some(None),
+            ),
+        ];
+        for w in &who {
+            let w = w.clone();
+            who_opts.push(Self::filter_option(
+                cx,
+                &w.clone(),
+                matches!(&filters.assignee, Some(Some(x)) if x == &w),
+                store_handle.clone(),
+                move |f| f.assignee = Some(Some(w.clone())),
+            ));
+        }
+
+        // Popover triggers must implement Selectable: Button does.
+        let trigger = |id: &'static str, label: String| {
+            gpui_kit::component::button::Button::new(id)
+                .label(gpui_kit::SharedString::from(label))
+                .outline()
+                .compact()
+        };
+
+        let type_menu: gpui_kit::AnyElement = div()
+            .flex()
+            .flex_col()
+            .p_1()
+            .w(px(150.))
+            .children(type_opts)
+            .into_any_element();
+        let prio_menu: gpui_kit::AnyElement = div()
+            .flex()
+            .flex_col()
+            .p_1()
+            .w(px(140.))
+            .children(prio_opts)
+            .into_any_element();
+        let who_menu: gpui_kit::AnyElement = div()
+            .flex()
+            .flex_col()
+            .p_1()
+            .w(px(150.))
+            .children(who_opts)
+            .into_any_element();
+
+        let closed_toggle = {
+            let theme = cx.theme();
+            let store = store_handle.clone();
+            let on = filters.show_closed;
+            div()
+                .id("filter-closed-toggle")
+                .px_2()
+                .py_1()
+                .rounded_md()
+                .text_xs()
+                .border_1()
+                .border_color(if on { theme.accent } else { theme.border })
+                .when(on, |el| el.text_color(theme.accent))
+                .hover(|s| s.bg(theme.accent.opacity(0.08)))
+                .on_click(cx.listener(move |_, _, _, cx| {
+                    store.update(cx, |store, cx| {
+                        let mut f = store.filters().clone();
+                        f.show_closed = !f.show_closed;
+                        store.set_filters(f, cx);
+                    });
+                }))
+                .child("Closed")
+        };
+
+        div()
+            .id("filter-menus")
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(
+                gpui_kit::component::popover::Popover::new("filter-type")
+                    .trigger(trigger("filter-type-trigger", type_label))
+                    .child(type_menu),
+            )
+            .child(
+                gpui_kit::component::popover::Popover::new("filter-prio")
+                    .trigger(trigger("filter-prio-trigger", prio_label))
+                    .child(prio_menu),
+            )
+            .child(
+                gpui_kit::component::popover::Popover::new("filter-who")
+                    .trigger(trigger("filter-who-trigger", who_label))
+                    .child(who_menu),
+            )
+            .child(closed_toggle)
+            .into_any_element()
     }
 
     fn render_ready_list(&self, ready: &[Bead], cx: &mut Context<Self>) -> impl IntoElement {
@@ -478,6 +777,41 @@ impl AppShell {
             .overflow_y_scroll()
             .p_3()
             .children(rows)
+            .into_any_element()
+    }
+
+
+    /// One popover option row; click applies `set` to the store filters.
+    fn filter_option<F>(
+        cx: &mut Context<Self>,
+        label: &str,
+        current: bool,
+        store: gpui_kit::Entity<Store>,
+        set: F,
+    ) -> gpui_kit::AnyElement
+    where
+        F: Fn(&mut crate::tree::Filters) + 'static,
+    {
+        let theme = cx.theme();
+        div()
+            .id(SharedString::from(format!("filter-opt-{label}")))
+            .px_2()
+            .py_1()
+            .rounded_sm()
+            .text_xs()
+            .when(current, |el| {
+                el.bg(theme.accent.opacity(0.12))
+                    .text_color(theme.accent)
+            })
+            .hover(|s| s.bg(theme.accent.opacity(0.06)))
+            .on_click(cx.listener(move |_, _, _, cx| {
+                store.update(cx, |store, cx| {
+                    let mut f = store.filters().clone();
+                    set(&mut f);
+                    store.set_filters(f, cx);
+                });
+            }))
+            .child(SharedString::from(label.to_string()))
             .into_any_element()
     }
 

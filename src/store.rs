@@ -7,6 +7,8 @@ use gpui_kit::Context;
 
 pub struct Store {
     beads: Vec<Bead>,
+    /// Shared filter surface (bdui-rs-8db); applies to every list view.
+    filters: crate::tree::Filters,
     /// Error from the last refresh, if any; drives the sync indicator.
     last_error: Option<String>,
     /// True once at least one successful refresh has completed.
@@ -19,6 +21,7 @@ impl Store {
     pub fn new() -> Self {
         Self {
             beads: Vec::new(),
+            filters: crate::tree::Filters::default(),
             last_error: None,
             loaded: false,
             last_success: None,
@@ -62,6 +65,33 @@ impl Store {
 
     pub fn beads(&self) -> &[Bead] {
         &self.beads
+    }
+
+    /// Current shared filters (type/priority/assignee/closed/query).
+    pub fn filters(&self) -> &crate::tree::Filters {
+        &self.filters
+    }
+
+    /// Replace the filters; notifies so every view re-renders.
+    pub fn set_filters(
+        &mut self,
+        filters: crate::tree::Filters,
+        cx: &mut Context<Self>,
+    ) {
+        self.filters = filters;
+        cx.notify();
+    }
+
+    /// All beads passing the shared filters, ready_rank sorted.
+    pub fn filtered(&self) -> Vec<Bead> {
+        let mut v: Vec<Bead> = self
+            .beads
+            .iter()
+            .filter(|b| self.filters.matches(b))
+            .cloned()
+            .collect();
+        v.sort_by(Bead::ready_rank);
+        v
     }
 
     /// Ready work: the home view. bd's own `ready` semantics are the

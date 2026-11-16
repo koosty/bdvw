@@ -6,4 +6,6 @@ pub mod graph;
 pub mod graph_view;
 pub mod palette;
 pub mod store;
+pub mod tree;
+pub mod tree_view;
 pub mod palette_ui;

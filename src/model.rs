@@ -73,6 +73,10 @@ pub struct Bead {
     pub labels: Vec<String>,
     #[serde(default)]
     pub dependency_count: usize,
+    /// Inline dependency edges from `bd list --json` rows; the tree reads
+    /// parent-child edges from here (bdui-rs-8db).
+    #[serde(default, rename = "dependencies")]
+    pub raw_deps: Vec<crate::graph::RawDep>,
     #[serde(default)]
     pub dependent_count: usize,
     #[serde(default)]
@@ -121,7 +125,7 @@ pub fn parse_summary(json: &str) -> Result<Vec<Bead>, String> {
 }
 
 /// Compute derived state for each bead from its stored status.
-fn derive_state(beads: &mut [Bead]) {
+pub fn derive_state(beads: &mut [Bead]) {
     for bead in beads.iter_mut() {
         bead.state = State::from_status(&bead.status).unwrap_or(State::Ready);
     }
@@ -222,6 +226,7 @@ mod tests {
             assignee: None,
             labels: vec![],
             dependency_count: 0,
+            raw_deps: vec![],
             dependent_count: 0,
             comment_count: 0,
             state: State::Ready,
