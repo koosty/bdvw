@@ -41,6 +41,17 @@ pub fn type_color(issue_type: &str, muted: gpui_kit::Hsla) -> gpui_kit::Hsla {
     }
 }
 
+/// Flip between light and dark. Shared by the topbar button and the palette.
+fn toggle_theme(cx: &mut gpui_kit::App) {
+    let mode = if gpui_kit::component::theme::Theme::global(cx).mode.is_dark() {
+        gpui_kit::component::theme::ThemeMode::Light
+    } else {
+        gpui_kit::component::theme::ThemeMode::Dark
+    };
+    gpui_kit::component::theme::Theme::change(mode, None, cx);
+    cx.refresh_windows();
+}
+
 /// P0–P4 chip colors (see prototype --p0…--p4 tokens).
 pub fn priority_color(priority: u8) -> gpui_kit::Hsla {
     match priority {
@@ -548,7 +559,46 @@ impl Render for AppShell {
 
 impl AppShell {
     fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = cx.theme();
+        let theme = cx.theme().clone();
+        let shell = cx.entity().clone();
+        let (ready_count, sync_label) = {
+            let store = self.store.read(cx);
+            (
+                crate::ready::tab_count(&store.filtered(), crate::ready::ReadyTab::Ready),
+                store.sync_label(),
+            )
+        };
+        let source = std::env::current_dir()
+            .ok()
+            .and_then(|dir| dir.file_name().map(|name| name.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "bd".to_string());
+
+        let views = [
+            (crate::palette::ViewKind::Ready, "Ready", IconName::CircleCheck),
+            (crate::palette::ViewKind::Tree, "Tree", IconName::FolderOpen),
+            (crate::palette::ViewKind::Graph, "Graph", IconName::Network),
+            (crate::palette::ViewKind::Board, "Board", IconName::LayoutDashboard),
+            (crate::palette::ViewKind::Activity, "Activity", IconName::Bell),
+        ];
+        let menu = views.into_iter().fold(SidebarMenu::new(), |menu, (view, label, icon)| {
+            let shell = shell.clone();
+            let item = SidebarMenuItem::new(label)
+                .icon(icon)
+                .active(self.active_view == view)
+                .on_click(move |_, _, cx| {
+                    shell.update(cx, |this, cx| {
+                        let client = this.client.clone();
+                        this.go_to_view(view, client.as_ref(), cx);
+                    });
+                });
+            let item = if view == crate::palette::ViewKind::Ready {
+                item.suffix(move |_, _| div().text_xs().child(ready_count.to_string()))
+            } else {
+                item
+            };
+            menu.child(item)
+        });
+
         Sidebar::new("sidebar")
             .header(
                 SidebarHeader::new().child(
@@ -558,24 +608,19 @@ impl AppShell {
                         .child("Beads Viewer"),
                 ),
             )
-            .child(
-                SidebarGroup::new("Views").child(
-                    SidebarMenu::new().child(
-                        SidebarMenuItem::new("Ready")
-                            .icon(IconName::ListTodo)
-                            .active(true)
-                            .on_click(cx.listener(|_, _, _, cx| {
-                                cx.notify();
-                            })),
-                    ),
-                ),
-            )
+            .child(SidebarGroup::new("Views").child(menu))
             .footer(
                 SidebarFooter::new().child(
                     div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
                         .text_xs()
                         .text_color(theme.muted_foreground)
-                        .child("0 saved filters"),
+                        .child(SharedString::from(format!("bd · {source}")))
+                        .child(SharedString::from(sync_label))
+                        .child("⌘K palette · / search")
+                        .child("j/k move · g then r t g b a views"),
                 ),
             )
     }
@@ -625,6 +670,8 @@ impl AppShell {
             )
         };
 
+        let shell = cx.entity().clone();
+        let dark = gpui_kit::component::theme::Theme::global(cx).mode.is_dark();
         div()
             .flex()
             .items_center()
@@ -665,6 +712,25 @@ impl AppShell {
                     .text_color(theme.muted_foreground)
                     .child(div().size(px(7.)).rounded_full().bg(dot))
                     .child(SharedString::from(sync_label)),
+            )
+            .child(
+                gpui_kit::component::button::Button::new("open-palette")
+                    .icon(IconName::SquareTerminal)
+                    .outline()
+                    .compact()
+                    .on_click(move |_, window, cx| {
+                        shell.update(cx, |this, cx| {
+                            let palette = this.palette.clone();
+                            palette.update(cx, |palette, cx| palette.open(window, cx));
+                        });
+                    }),
+            )
+            .child(
+                gpui_kit::component::button::Button::new("toggle-theme")
+                    .icon(if dark { IconName::Sun } else { IconName::Moon })
+                    .outline()
+                    .compact()
+                    .on_click(|_, _, cx| toggle_theme(cx)),
             )
     }
 
@@ -1185,12 +1251,7 @@ fn shell_palette_pick(
             shell.go_to_view(view, client.as_ref(), cx);
         }
         crate::palette_ui::PaletteAction::ToggleTheme => {
-            let mode = if gpui_kit::component::theme::Theme::global(cx).mode.is_dark() {
-                gpui_kit::component::theme::ThemeMode::Light
-            } else {
-                gpui_kit::component::theme::ThemeMode::Dark
-            };
-            gpui_kit::component::theme::Theme::change(mode, None, cx);
+            toggle_theme(cx);
             cx.notify();
         }
     }
