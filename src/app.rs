@@ -73,6 +73,14 @@ impl AppShell {
     ) -> Self {
         store.update(cx, |store, cx| client.refresh(store, cx));
         let graph_view = cx.new(|_| crate::graph_view::GraphView::new());
+        // Graph node clicks open the detail drawer.
+        cx.subscribe(&graph_view, |shell, _, event, cx| {
+            if let crate::graph_view::GraphViewEvent::NodeClicked(id) = event {
+                let drawer = shell.drawer.clone();
+                drawer.update(cx, |drawer, cx| drawer.open(id, cx));
+            }
+        })
+        .detach();
         let handle = cx.focus_handle();
         window.focus(&handle, cx);
         let palette = cx.new(|cx| crate::palette_ui::Palette::new(window, cx));
@@ -162,6 +170,26 @@ impl AppShell {
             window.defer(cx, move |window, cx| {
                 palette.update(cx, |palette, cx| palette.open(window, cx));
             });
+            return;
+        }
+
+        // On the Graph view, j/k drive node selection instead.
+        if self.active_view == crate::palette::ViewKind::Graph {
+            let gv = self.graph_view.clone();
+            match key {
+                "j" => gv.update(cx, |gv, cx| gv.move_selection(true, cx)),
+                "k" => gv.update(cx, |gv, cx| gv.move_selection(false, cx)),
+                "enter" => {
+                    let id = gv.read(cx).selected().map(|s| s.to_string());
+                    if let Some(id) = id {
+                        let drawer = self.drawer.clone();
+                        window.defer(cx, move |_, cx| {
+                            drawer.update(cx, |drawer, cx| drawer.open(&id, cx));
+                        });
+                    }
+                }
+                _ => {}
+            }
             return;
         }
 
