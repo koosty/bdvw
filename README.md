@@ -21,7 +21,7 @@ A desktop UI for supervising [bd (beads)](https://github.com/gastownhall/beads) 
 ## Requirements
 
 - Linux with Wayland (X11 untested)
-- Rust 1.75+ (developed on 1.100)
+- Rust 1.85+ (gpui-kit uses edition 2024; developed on 1.100)
 - `bd` on `PATH` — the viewer shells out to it, never opens the database
 
 ## Build and run
@@ -30,16 +30,16 @@ A desktop UI for supervising [bd (beads)](https://github.com/gastownhall/beads) 
 git clone https://github.com/koosty/bdvw.git
 cd bdvw
 cargo build --release
-./target/release/bdui
+./target/release/bdvw
 ```
 
 Point it at a workspace other than the current directory:
 
 ```bash
-./target/release/bdui --dir /path/to/project
+./target/release/bdvw --dir /path/to/project
 ```
 
-`--dir` canonicalizes the path, rejects non-directories, and exits 2 on bad arguments. `bdui --help` prints usage.
+`--dir` canonicalizes the path, rejects non-directories, and exits 2 on bad arguments. `bdvw --help` prints usage.
 
 ## Keys
 

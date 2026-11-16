@@ -3,10 +3,10 @@
 use std::path::PathBuf;
 
 pub const USAGE: &str = "\
-bdui - Beads viewer
+bdvw - Beads viewer
 
 Usage:
-  bdui [--dir <path>]
+  bdvw [--dir <path>]
 
 Options:
   --dir <path>   Beads workspace directory (default: current directory)
