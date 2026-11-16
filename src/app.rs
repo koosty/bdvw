@@ -11,6 +11,7 @@ use gpui_kit::component::sidebar::{
 use gpui_kit::assets::IconName;
 use gpui_kit::component::ActiveTheme;
 use gpui_kit::component::WindowExt as _;
+use gpui_kit::component::TitleBar;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
     Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
@@ -519,18 +520,26 @@ impl Render for AppShell {
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::handle_key))
             .flex()
+            .flex_col()
             .size_full()
             .bg(theme.background)
             .text_color(theme.foreground)
-            .child(self.render_sidebar(cx))
+            .child(TitleBar::new())
             .child(
                 div()
                     .flex()
-                    .flex_col()
                     .flex_1()
-                    .min_w_full()
-                    .child(self.render_topbar(cx))
-                    .child(self.render_main_pane(&ready, cx)),
+                    .min_h_0()
+                    .child(self.render_sidebar(cx))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w_full()
+                            .child(self.render_topbar(cx))
+                            .child(self.render_main_pane(&ready, cx)),
+                    ),
             )
             .child(self.palette.clone())
     }

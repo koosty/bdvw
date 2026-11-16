@@ -6,6 +6,7 @@ use bdui::drawer::{DetailClient, Drawer};
 use bdui::store::Store;
 use gpui_kit::AppContext as _;
 use gpui_kit::{WindowDecorations, WindowOptions};
+use gpui_kit::component::TitleBar;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -42,8 +43,8 @@ fn main() {
             gpui_kit::init(cx);
             gpui_kit::open_window(
                 WindowOptions {
-                    window_decorations: Some(WindowDecorations::Server),
-                    ..WindowOptions::default()
+                    window_decorations: Some(WindowDecorations::Client),
+                    ..TitleBar::window_options()
                 },
                 cx,
                 |window, cx| {
