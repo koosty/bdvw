@@ -1,6 +1,7 @@
 //! App shell: three-pane layout (Sidebar, top bar, drawer column)
 //! with the Ready list as the home view. Ticket bdui-rs-oga.
 
+use crate::client::BeadsClient as _;
 use crate::model::{Bead, State};
 use gpui_kit::AppContext as _;
 use crate::store::Store;
@@ -61,6 +62,9 @@ pub trait BeadsClientShim {
     fn refresh(&self, store: &mut Store, cx: &mut Context<Store>);
     /// `bd graph --all --json`, parsed. The graph view fetches on activation.
     fn graph(&self) -> Result<crate::graph::GraphData, String>;
+    /// The shared CLI client for the 2s poll loop (bdui-rs-7lr). The client
+    /// itself serializes invocations.
+    fn poll_client(&self) -> std::sync::Arc<crate::client::CliClient>;
 }
 
 impl AppShell {
@@ -90,13 +94,73 @@ impl AppShell {
             shell_palette_pick(shell, action.clone(), cx);
         })
         .detach();
-        // Keep palette bead jumps in sync with store refreshes.
-        cx.observe(&store, |shell, store, cx| {
-            let beads = store.read(cx).ready().to_vec();
+        // Keep palette bead jumps in sync with store refreshes, and reload
+        // the graph when its data may have changed while it is the active
+        // view (the store observe fires on every poll apply).
+        cx.observe(&store, |shell, _store, cx| {
+            let beads = _store.read(cx).ready().to_vec();
             let palette = shell.palette.clone();
             palette.update(cx, |palette, cx| palette.set_beads(beads, cx));
+            if let crate::palette::ViewKind::Graph = shell.active_view {
+                let graph_view = shell.graph_view.clone();
+                let client = shell.client.clone();
+                let data = client.graph();
+                graph_view.update(cx, |gv, cx| match data {
+                    Ok(data) => gv.reload(&data, cx),
+                    Err(e) => gv.reload_failed(e, cx),
+                });
+            }
         })
         .detach();
+
+        // Live-sync poll (bdui-rs-7lr): every 2s fetch the list off-thread,
+        // diff into the store, refresh the open drawer's detail. The CLI
+        // client serializes invocations internally.
+        {
+            let client = std::sync::Arc::clone(&client.poll_client());
+            cx.spawn(async move |shell, cx| {
+                loop {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_secs(2))
+                        .await;
+                    let fetch = std::sync::Arc::clone(&client);
+                    let fetched = cx
+                        .background_spawn(async move { fetch.list() })
+                        .await;
+                    let shell = shell.clone();
+                    cx.update(|cx| {
+                        let Some(shell) = shell.upgrade() else { return };
+                        shell.update(cx, |shell, cx| {
+                            match fetched {
+                                Ok(beads) => {
+                                    let store = shell.store.clone();
+                                    let drawer = shell.drawer.clone();
+                                    let changed = store.update(cx, |store, cx| {
+                                        store.apply_beads(beads, cx)
+                                    });
+                                    if changed {
+                                        if let Some(_id) =
+                                            drawer.read(cx).open_id()
+                                        {
+                                            drawer.update(cx, |drawer, cx| {
+                                                drawer.refresh(cx)
+                                            });
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    let store = shell.store.clone();
+                                    store.update(cx, |store, cx| {
+                                        store.set_sync_error(e.to_string(), cx)
+                                    });
+                                }
+                            }
+                        })
+                    });
+                }
+            })
+            .detach();
+        }
 
         Self {
             store,

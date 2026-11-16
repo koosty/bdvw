@@ -7,24 +7,31 @@ use bdui::store::Store;
 use gpui_kit::AppContext as _;
 use gpui_kit::WindowOptions;
 use std::rc::Rc;
+use std::sync::Arc;
 
 struct CliShim {
-    client: CliClient,
+    /// Shared with the poll loop; the client serializes invocations.
+    client: Arc<CliClient>,
 }
 
 impl bdui::app::BeadsClientShim for CliShim {
     fn refresh(&self, store: &mut Store, cx: &mut gpui_kit::Context<Store>) {
-        store.refresh(&self.client, cx);
+        store.refresh(self.client.as_ref(), cx);
     }
 
     fn graph(&self) -> Result<bdui::graph::GraphData, String> {
         self.client.graph().map_err(|e| e.to_string())
     }
+
+    fn poll_client(&self) -> std::sync::Arc<CliClient> {
+        self.client.clone()
+    }
 }
 
 impl DetailClient for CliShim {
     fn detail(&self, id: &str) -> Result<bdui::model::BeadDetail, String> {
-        bdui::client::BeadsClient::detail(&self.client, id).map_err(|e| e.to_string())
+        bdui::client::BeadsClient::detail(self.client.as_ref(), id)
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -34,7 +41,7 @@ fn main() {
         .run(|cx| {
             gpui_kit::init(cx);
             gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
-                let client = Rc::new(CliShim { client: CliClient::new() });
+                let client = Rc::new(CliShim { client: Arc::new(CliClient::new()) });
                 let store = cx.new(|_| Store::new());
                 let drawer = cx.new(|_| Drawer::new(client.clone()));
                 cx.new(|cx| AppShell::new(store, client, drawer, window, cx))

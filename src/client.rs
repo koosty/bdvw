@@ -39,22 +39,30 @@ impl std::fmt::Display for ClientError {
 impl std::error::Error for ClientError {}
 
 /// CLI transport: runs `bd` as a subprocess with `--json`.
-/// Serialized by the caller (one invocation at a time, per the design).
+///
+/// A process-wide lock serializes every invocation (bdui-rs-7lr): polls,
+/// detail fetches, and (later) writes never interleave. `bd` itself is safe
+/// to run concurrently, but one-at-a-time keeps ordering obvious and the
+/// workspace lock uncontended.
 pub struct CliClient {
     cwd: Option<std::path::PathBuf>,
+    /// Held for the duration of each subprocess run.
+    lock: std::sync::Mutex<()>,
 }
 
 impl CliClient {
     pub fn new() -> Self {
-        Self { cwd: None }
+        Self { cwd: None, lock: std::sync::Mutex::new(()) }
     }
 
     /// Point at a specific beads workspace directory.
     pub fn in_dir(cwd: impl Into<std::path::PathBuf>) -> Self {
-        Self { cwd: Some(cwd.into()) }
+        Self { cwd: Some(cwd.into()), lock: std::sync::Mutex::new(()) }
     }
 
     fn run_json(&self, args: &[&str]) -> Result<String, ClientError> {
+        // One bd invocation at a time, process-wide.
+        let _guard = self.lock.lock().expect("bd client lock poisoned");
         let mut cmd = std::process::Command::new("bd");
         cmd.args(args).arg("--json");
         if let Some(dir) = &self.cwd {

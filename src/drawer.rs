@@ -32,6 +32,19 @@ impl Drawer {
         Self { selected: None, detail: None, client }
     }
 
+    /// Re-fetch the detail for the currently selected bead (poll path).
+    pub fn refresh(&mut self, cx: &mut Context<Drawer>) {
+        if let Some(id) = self.selected.clone() {
+            self.detail = self.client.detail(&id).ok();
+            cx.notify();
+        }
+    }
+
+    /// The bead currently open, if any.
+    pub fn open_id(&self) -> Option<&str> {
+        self.selected.as_deref()
+    }
+
     /// Select a bead and load its full record. Re-selecting the same id
     /// reloads it (cheap; external writes may have changed it).
     pub fn open(&mut self, id: &str, cx: &mut Context<Drawer>) {
