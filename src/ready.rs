@@ -71,8 +71,12 @@ pub fn tab_rows(beads: &[Bead], tab: ReadyTab) -> Vec<Bead> {
     rows
 }
 
-/// The bead the prototype suggests claiming: the first Ready row.
+/// The bead worth claiming next: the first genuinely Ready row.
+///
 /// `ready` must already be in ready-rank order (as `tab_rows` returns it).
+/// The Ready tab also carries unmapped statuses (bd `pinned`/`hooked`,
+/// custom statuses) so they stay visible, but those are not claimable work
+/// in the ordinary sense, so they never get suggested.
 pub fn suggested_next(ready: &[Bead]) -> Option<&Bead> {
-    ready.first()
+    ready.iter().find(|b| b.state == State::Ready)
 }

@@ -82,3 +82,36 @@ fn suggested_next_is_none_when_nothing_is_ready() {
 
     assert!(suggested_next(&ready).is_none());
 }
+
+/// The Ready tab carries unmapped statuses so they stay visible, but they
+/// are not ordinary claimable work. A `pinned` bead at the top of the
+/// ranking must not become the suggestion.
+#[test]
+fn suggested_next_skips_unmapped_statuses() {
+    let beads = derived(vec![
+        bead("pinned", "pinned", 0, "2026-01-01T00:00:00Z"),
+        bead("hooked", "hooked", 1, "2026-01-01T00:00:00Z"),
+        bead("real", "open", 2, "2026-01-01T00:00:00Z"),
+    ]);
+    let ready = tab_rows(&beads, ReadyTab::Ready);
+    // They still appear in the tab, ranked above the ordinary bead.
+    assert_eq!(ids(&ready), ["pinned", "hooked", "real"]);
+
+    assert_eq!(
+        suggested_next(&ready).map(|b| b.id.as_str()),
+        Some("real"),
+        "an unmapped status must never be suggested as next work"
+    );
+}
+
+/// If every Ready-tab row is an unmapped status, there is nothing to suggest.
+#[test]
+fn suggested_next_is_none_when_only_unmapped_statuses_remain() {
+    let beads = derived(vec![
+        bead("pinned", "pinned", 0, "2026-01-01T00:00:00Z"),
+        bead("triage", "triage", 1, "2026-01-01T00:00:00Z"),
+    ]);
+    let ready = tab_rows(&beads, ReadyTab::Ready);
+    assert_eq!(ready.len(), 2);
+    assert!(suggested_next(&ready).is_none());
+}
