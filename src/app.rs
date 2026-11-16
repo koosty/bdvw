@@ -908,7 +908,7 @@ impl AppShell {
                 .text_xs()
                 .border_1()
                 .border_color(if on { theme.accent } else { theme.border })
-                .when(on, |el| el.text_color(theme.accent))
+                .when(on, |el| el.bg(theme.accent.opacity(0.12)).text_color(theme.foreground))
                 .hover(|s| s.bg(theme.accent.opacity(0.08)))
                 .on_click(cx.listener(move |_, _, _, cx| {
                     store.update(cx, |store, cx| {
