@@ -536,7 +536,6 @@ impl Render for AppShell {
                             .flex()
                             .flex_col()
                             .flex_1()
-                            .min_w_full()
                             .child(self.render_topbar(cx))
                             .child(self.render_main_pane(&ready, cx)),
                     ),
@@ -644,7 +643,6 @@ impl AppShell {
                     .text_color(theme.muted_foreground)
                     .child(format!("{bead_count} beads")),
             )
-            .flex_1()
             // Shared filter surface (bdui-rs-8db).
             .child(
                 div()
@@ -655,6 +653,7 @@ impl AppShell {
                     .child(gpui_kit::component::input::Input::new(&self.search_input)),
             )
             .child(self.render_filter_menus(cx))
+            .child(div().flex_1())
             .child(
                 div()
                     .flex()

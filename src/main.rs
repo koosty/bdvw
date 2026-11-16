@@ -48,6 +48,7 @@ fn main() {
                 },
                 cx,
                 |window, cx| {
+                window.set_window_title("Beads Viewer");
                 let cli = Arc::new(CliClient::new());
                 let client = Rc::new(CliShim { client: cli.clone() });
                 let store = cx.new(|_| Store::new());
