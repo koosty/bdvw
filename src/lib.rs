@@ -1,3 +1,5 @@
+pub mod activity;
+pub mod activity_view;
 pub mod app;
 pub mod board;
 pub mod board_view;

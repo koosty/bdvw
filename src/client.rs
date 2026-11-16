@@ -17,6 +17,9 @@ pub trait BeadsClient {
     /// `bd graph --all --json` — connected components with full records
     /// and dependency edges for the DAG view.
     fn graph(&self) -> Result<GraphData, ClientError>;
+    /// `bd history <id> --events --json` — audit events for one bead
+    /// (activity feed, bdui-rs-2u6).
+    fn history(&self, id: &str) -> Result<Vec<crate::activity::ActivityEvent>, ClientError>;
 }
 
 #[derive(Debug)]
@@ -97,6 +100,12 @@ impl BeadsClient for CliClient {
     fn ready(&self) -> Result<Vec<Bead>, ClientError> {
         let out = self.run_json(&["ready"])?;
         self.parse(&out)
+    }
+
+    fn history(&self, id: &str) -> Result<Vec<crate::activity::ActivityEvent>, ClientError> {
+        let json = self.run_json(&["history", id, "--events"])?;
+        crate::activity::parse_events(&json)
+            .map_err(ClientError::Parse)
     }
 
     fn detail(&self, id: &str) -> Result<BeadDetail, ClientError> {

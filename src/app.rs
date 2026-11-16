@@ -48,6 +48,10 @@ pub struct AppShell {
     tree_view: Entity<crate::tree_view::TreeView>,
     /// Board view; same feed as the tree (bdui-rs-nx8).
     board_view: Entity<crate::board_view::BoardView>,
+    /// Activity feed; refetched while Activity is active (bdui-rs-2u6).
+    activity_view: Entity<crate::activity_view::ActivityView>,
+    /// One activity fetch at a time while the view is active.
+    activity_in_flight: bool,
     /// Search input state for the shared filter surface.
     search_input: gpui_kit::Entity<gpui_kit::component::input::InputState>,
     drawer: Entity<crate::drawer::Drawer>,
@@ -100,6 +104,14 @@ impl AppShell {
             drawer.update(cx, |drawer, cx| drawer.open(id, cx));
         })
         .detach();
+        let activity_view = cx.new(|_| crate::activity_view::ActivityView::new());
+        // Activity entries open the drawer on their bead.
+        cx.subscribe(&activity_view, |shell, _, event, cx| {
+            let crate::activity_view::ActivityViewEvent::EntryClicked(id) = event;
+            let drawer = shell.drawer.clone();
+            drawer.update(cx, |drawer, cx| drawer.open(id, cx));
+        })
+        .detach();
         // Graph node clicks open the detail drawer.
         cx.subscribe(&graph_view, |shell, _, event, cx| {
             if let crate::graph_view::GraphViewEvent::NodeClicked(id) = event {
@@ -142,6 +154,10 @@ impl AppShell {
                     Ok(data) => gv.reload(&data, cx),
                     Err(e) => gv.reload_failed(e, cx),
                 });
+            }
+            if let crate::palette::ViewKind::Activity = shell.active_view {
+                let client = shell.client.clone();
+                shell.refresh_activity(client.as_ref(), cx);
             }
         })
         .detach();
@@ -219,6 +235,8 @@ impl AppShell {
             graph_view,
             tree_view,
             board_view,
+            activity_view,
+            activity_in_flight: false,
             search_input,
             drawer,
             palette,
@@ -318,6 +336,18 @@ impl AppShell {
             return;
         }
 
+        // Activity view owns j/k/Enter over its entries (bdui-rs-2u6).
+        if self.active_view == crate::palette::ViewKind::Activity {
+            let activity = self.activity_view.clone();
+            match key {
+                "j" => activity.update(cx, |av, cx| av.move_selection(1, cx)),
+                "k" => activity.update(cx, |av, cx| av.move_selection(-1, cx)),
+                "enter" => activity.update(cx, |av, cx| av.activate(cx)),
+                _ => {}
+            }
+            return;
+        }
+
         // Board view owns j/k/Enter over its cards (bdui-rs-nx8).
         if self.active_view == crate::palette::ViewKind::Board {
             let board = self.board_view.clone();
@@ -405,8 +435,59 @@ impl AppShell {
                 Err(e) => gv.reload_failed(e, cx),
             });
         }
+        if view == crate::palette::ViewKind::Activity {
+            self.refresh_activity(client, cx);
+        }
         self.active_view = view;
         cx.notify();
+    }
+
+    /// Fetch every bead's audit events off the UI thread and merge into
+    /// the activity feed (bdui-rs-2u6). One bd process at a time through
+    /// the shared client; single-bead failures drop from the feed.
+    fn refresh_activity(
+        &mut self,
+        client: &dyn BeadsClientShim,
+        cx: &mut Context<Self>,
+    ) {
+        // One fetch in flight at a time; the completion path clears it.
+        if self.activity_in_flight {
+            return;
+        }
+        self.activity_in_flight = true;
+        let ids: Vec<String> = self
+            .store
+            .read(cx)
+            .beads()
+            .iter()
+            .map(|b| b.id.clone())
+            .collect();
+        let beads = self.store.read(cx).beads().to_vec();
+        let poll = client.poll_client();
+        let activity = self.activity_view.clone();
+        cx.spawn(async move |shell, cx| {
+            let fetch = poll.clone();
+            let events = cx
+                .background_spawn(async move {
+                    let mut out = Vec::new();
+                    for id in &ids {
+                        if let Ok(mut evs) = fetch.history(id) {
+                            out.append(&mut evs);
+                        }
+                    }
+                    out
+                })
+                .await;
+            let shell = shell.clone();
+            cx.update(|cx| {
+                let Some(shell) = shell.upgrade() else { return };
+                shell.update(cx, |shell, cx| {
+                    shell.activity_in_flight = false;
+                    activity.update(cx, |av, cx| av.set_feed(&beads, events, cx));
+                })
+            });
+        })
+        .detach();
     }
 
 }
@@ -489,6 +570,9 @@ impl AppShell {
             crate::palette::ViewKind::Graph => self.graph_view.clone().into_any_element(),
             crate::palette::ViewKind::Tree => self.tree_view.clone().into_any_element(),
             crate::palette::ViewKind::Board => self.board_view.clone().into_any_element(),
+            crate::palette::ViewKind::Activity => {
+                self.activity_view.clone().into_any_element()
+            }
             view => {
                 let theme = cx.theme().clone();
                 div()
